@@ -5,6 +5,7 @@ There are currently two main folders in this repo which house code and data: \bu
 
 The \build folder contains all data and code necessary to clean and pre-process the data for analysis. It contains several sub-directories:
 1. \input which houses the raw data on (XYZ audit data).
+   1.1. NOTE: if any of the data files are > 100MB, we can't store them on Github directly. In that case we'll have to add the data files to the .gitignore file so that when we commit the code updates, the commit doesn't try to push the data files themselves. We'll also have to add the output datasets to .gitignore also. That means that we'll be storing the data locally or on Dropbox and having code stored on Github (and lcoally) point to it, but we won't store the data itself on Github.
 2. \code which houses the cleaning and pre-processing script(s).
 3. \output will contain the cleaned dataset(s) which are imported directly from the scripts in the \analysis folder.
 4. \temp contains any log files or temporary outputs which we may want to save.
