@@ -15,6 +15,8 @@ The \analysis folder contains all code to perform econometric analysis and creat
 3. \output contains LaTeX tables and other figures/plots, etc.
 4. \temp contains any log files or temporary outputs which we may want to save 
 
+*NOTE: the .gitkeep files are placeholder files that are there so Git tracks the otherwise empty folders. Once we add contents to a folder, we can remove the .gitkeep file
+
 
 
 
