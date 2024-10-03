@@ -16,6 +16,12 @@ The \analysis folder contains all code to perform econometric analysis and creat
 3. \output contains LaTeX tables and other figures/plots, etc.
 4. \temp contains any log files or temporary outputs which we may want to save 
 
+
+Script Order:
+1. The ~\build\code\grf_pre_cleaning.R script imports the raw data files and processes them for ML exercises
+2. The ~\analysis\code\GRF_train_main.R script trains and saves the ML algorithms
+3. The ~\analysis\code\optimization_testing_script.R (which will eventually be changed to an official optimization script) performs the MVPF minimization exercises
+
 *NOTE: the .gitkeep files are placeholder files that are there so Git tracks the otherwise empty folders. Once we add contents to a folder, we can remove the .gitkeep file
 
 
