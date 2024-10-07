@@ -59,29 +59,29 @@ calculate_npv <- function(df, year) {
   discount_rate <- 0.03
   npv <- 0
   
-  for (i in 0:4) {
+  for (i in 0:3) {
     future_year <- year + i
-    column_name <- paste0("normalincometax_", future_year)
+    column_name <- paste0("nettaxchargeable_", future_year)
     
     # Replace NA with 0
     value <- ifelse(is.na(df[[column_name]]), 0, df[[column_name]])
     
     # Calculate discounted value and add to NPV
-    npv <- npv + value / ((1 + discount_rate) ^ i)
+    npv <- npv + value / ((1 + discount_rate)^i)
   }
   
   return(round(npv, 2))
 }
 
 # Apply the function to each year and create new columns
-years <- 2014:2017
+years <- 2017:2018
 for (year in years) {
   npv_column_name <- paste0("NPV_taxrevenue_", year)
   tax_returns_df[[npv_column_name]] <- map_dbl(1:nrow(tax_returns_df), ~ calculate_npv(tax_returns_df[., ], year))
 }
 
 View(tax_returns_df %>%
-  select(starts_with("normalincometax_"), starts_with("NPV_taxrevenue_")))
+  select(starts_with("nettaxchargeable_"), starts_with("NPV_taxrevenue_")))
 
 
 
@@ -93,7 +93,7 @@ generate_audited_indicator <- function(n) {
 }
 
 # Apply the function to each year and create new columns
-years <- 2014:2021
+years <- 2013:2021
 for (year in years) {
   audited_column_name <- paste0("audited_", year)
   tax_returns_df[[audited_column_name]] <- generate_audited_indicator(nrow(tax_returns_df))
