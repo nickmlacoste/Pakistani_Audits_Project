@@ -27,7 +27,7 @@ generate_dataset <- function(n) {
   return(data.frame(R, B, C, indiv_MVPF))
 }
 
-df <- generate_dataset(n=1000000)
+df <- generate_dataset(n=1000)
 
 # Function to calculate total MVPF for a given selection of individuals
 calculate_total_mvpf <- function(df_subset) {
