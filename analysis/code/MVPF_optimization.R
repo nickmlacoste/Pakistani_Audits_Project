@@ -277,278 +277,7 @@ plot(result_mbsgd$obj_values, type = "l", col = "blue",
 ##### Revenue maximization problems ############
 ################################################
 
-# Genetic Algorithm (max MVPF constraint only) --------------------------
-
-# Define the fitness function: total revenue
-fitness_function <- function(W, R) {
-  return(sum(W * R))  # Fitness is total revenue
-}
-
-# Define the MVPF constraint
-mvpf_constraint <- function(W, R, B, C, MVPF_max) {
-  numerator <- sum(W * (R + B))
-  denominator <- sum(W * (R - C))
-  
-  if (denominator > 0) {
-    mvpf <- numerator / denominator
-    return(mvpf)
-  } else {
-    return(Inf)  # If denominator is non-positive, constraint is violated
-  }
-}
-
-# vectors to store revenues and MVPFs across iterations
-revenue_history <- c()
-mvpf_history <- c()
-
-# Combine the fitness and constraint in the evaluation function
-evaluation_function <- function(W, R, B, C, MVPF_max) {
-  mvpf <- mvpf_constraint(W, R, B, C, MVPF_max)
-  
-  # Apply a soft penalty based on how much the constraint is violated
-  if (mvpf <= MVPF_max) {
-    total_revenue <- sum(W * R)  # Calculate total revenue
-  } else {
-    total_revenue <- sum(W * R) - 10000000 * (mvpf - MVPF_max)  # Apply penalty
-  }
-  
-  # Store the total revenue and MVPF for this iteration
-  revenue_history <<- c(revenue_history, sum(W * R))
-  mvpf_history <<- c(mvpf_history, mvpf)
-  
-  return(total_revenue)
-}
-
-check_mvpf_constraint <- function(W, R, B, C, MVPF_max) {
-  numerator <- sum(W * (R + B))
-  denominator <- sum(W * (R - C))
-  
-  if (denominator > 0) {
-    mvpf <- numerator / denominator
-    return(mvpf <= MVPF_max)  # Return TRUE if MVPF is valid
-  } else {
-    return(FALSE)  # Return FALSE if the MVPF is invalid
-  }
-}
-
-initialize_population_valid_fast <- function(object, R, B, C, MVPF_max, individual_MVPF) {
-  # Create a population where only valid individuals are included
-  n <- object@nBits
-  pop <- matrix(0, nrow = object@popSize, ncol = n)
-  
-  # Step 1: Filter individuals with individual MVPF <= MVPF_max
-  valid_indices <- which(individual_MVPF <= MVPF_max)
-  valid_pool_size <- length(valid_indices)
-  
-  if (valid_pool_size == 0) {
-    stop("No individuals with valid MVPF found.")
-  }
-  
-  # Generate population, ensuring valid MVPF constraint for each individual
-  for (i in 1:object@popSize) {
-    valid <- FALSE
-    while (!valid) {
-      # Randomly treat 10 individuals from the valid pool
-      W <- rep(0, n)
-      num_treated <- min(10, valid_pool_size)  # Treat at most 10 valid individuals
-      treated_indices <- sample(valid_indices, num_treated)
-      W[treated_indices] <- 1
-      
-      # Check if cumulative MVPF is valid
-      valid <- check_mvpf_constraint(W, R, B, C, MVPF_max)
-    }
-    pop[i, ] <- W  # Store valid individual in population
-  }
-  
-  return(pop)
-}
-
-MVPF_max <- 1.5
-
-# Run the Genetic Algorithm for binary W with custom initialization
-ga_result <- ga(
-  type = "binary",
-  fitness = function(W) evaluation_function(W, df$R, df$B, df$C, MVPF_max),
-  nBits = nrow(df),   # Number of bits equal to number of individuals
-  popSize = 200,      # Population size
-  maxiter = 5000,     # Maximum number of generations
-  run = 50,          # Stop if no improvement for 50 generations
-  pmutation = 0.2,    # Higher mutation rate to allow for exploration
-  population = function(object) initialize_population_valid_fast(object, 
-                                                                 df$R, df$B, df$C, 
-                                                                 MVPF_max, df$indiv_MVPF),  # Initialize valid population
-  seed = 42           # Seed for reproducibility
-)
-
-# Print the results
-#cat("Optimal treatment allocation (W):", ga_result@solution, "\n")
-cat("Maximized revenue:", sum(ga_result@solution * df$R), "\n")
-
-# Check the MVPF of the final solution
-final_W <- ga_result@solution
-final_numerator <- sum(final_W * (df$R + df$B))
-final_denominator <- sum(final_W * (df$R - df$C))
-final_mvp <- final_numerator / final_denominator
-cat("Final MVPF:", final_mvp, "\n")
-
-# Create a data frame for plotting
-iterations <- seq_along(revenue_history)  # Sequence of iterations
-plot_data <- data.frame(
-  Iteration = iterations,
-  Total_Revenue = revenue_history,
-  Aggregate_MVPF = mvpf_history
-)
-plot_data <- plot_data %>%
-  mutate(Cumulative_Max_Revenue = cummax(Total_Revenue),
-         Corresponding_MVPF = Aggregate_MVPF[match(Cumulative_Max_Revenue, Total_Revenue)])
-
-par(mar = c(5, 4, 4, 5))
-
-twoord.plot(
-  lx = plot_data$Iteration, ly = plot_data$Cumulative_Max_Revenue,
-  rx = plot_data$Iteration, ry = plot_data$Corresponding_MVPF,
-  lylim = range(plot_data$Cumulative_Max_Revenue, na.rm = TRUE),
-  rylim = range(plot_data$Corresponding_MVPF, na.rm = TRUE),
-  lcol = "blue", rcol = "red",
-  xlab = "Iteration", ylab = "Cumulative Max Revenue", rylab = "Aggregate MVPF",
-  main = "Genetic Algorithm Policy Convergence",
-  type = c("l", "l"),
-  do.first = "grid()"
-)
-axis(side = 2, at = pretty(plot_data$Cumulative_Max_Revenue), 
-     las = 0, col.axis = "blue", col = "blue")
-
-
-# Genetic Algorithm (add maximum cost constraint) -------------------------
-
-# Define the fitness function with additional cost constraint
-evaluation_function <- function(W, R, B, C, MVPF_max, Cost_max) {
-  mvpf <- mvpf_constraint(W, R, B, C, MVPF_max)
-  total_cost <- sum(W * C)  # Calculate total cost for treated individuals
-  
-  # Check if MVPF and cost constraints are both satisfied
-  if (mvpf <= MVPF_max && total_cost <= Cost_max) {
-    total_revenue <- sum(W * R)  # Calculate total revenue if constraints are met
-  } else {
-    # Apply a penalty if either constraint is violated
-    penalty <- 10000000 * (max(0, mvpf - MVPF_max) + max(0, total_cost - Cost_max))
-    total_revenue <- sum(W * R) - penalty  # Apply penalty to revenue
-  }
-  
-  # Store the total revenue and MVPF for this iteration
-  revenue_history <<- c(revenue_history, sum(W * R))
-  mvpf_history <<- c(mvpf_history, mvpf)
-  
-  return(total_revenue)
-}
-
-# Modify the population initialization function as needed
-initialize_population_valid_fast <- function(object, R, B, C, MVPF_max, Cost_max, individual_MVPF) {
-  # Create a population where only valid individuals are included
-  n <- object@nBits
-  pop <- matrix(0, nrow = object@popSize, ncol = n)
-  
-  # Step 1: Filter individuals with individual MVPF <= MVPF_max
-  valid_indices <- which(individual_MVPF <= MVPF_max)
-  valid_pool_size <- length(valid_indices)
-  
-  if (valid_pool_size == 0) {
-    stop("No individuals with valid MVPF found.")
-  }
-  
-  # Generate population, ensuring valid MVPF and cost constraint for each individual
-  for (i in 1:object@popSize) {
-    valid <- FALSE
-    while (!valid) {
-      # Randomly treat 10 individuals from the valid pool
-      W <- rep(0, n)
-      num_treated <- min(10, valid_pool_size)  # Treat at most 10 valid individuals
-      treated_indices <- sample(valid_indices, num_treated)
-      W[treated_indices] <- 1
-      
-      # Check if cumulative MVPF and cost are valid
-      valid <- check_mvpf_constraint(W, R, B, C, MVPF_max) && sum(W * C) <= Cost_max
-    }
-    pop[i, ] <- W  # Store valid individual in population
-  }
-  
-  return(pop)
-}
-
-# Maximum allowable cost (adjust this as needed)
-MVPF_max <- 1.5
-Cost_max <- 1500
-
-# Run the Genetic Algorithm for binary W with custom initialization and the additional cost constraint
-ga_result <- ga(
-  type = "binary",
-  fitness = function(W) evaluation_function(W, df$R, df$B, df$C, MVPF_max, Cost_max),
-  nBits = nrow(df),   # Number of bits equal to number of individuals
-  popSize = 200,      # Population size
-  maxiter = 5000,     # Maximum number of generations
-  run = 50,           # Stop if no improvement for 50 generations
-  pmutation = 0.2,    # Higher mutation rate to allow for exploration
-  population = function(object) initialize_population_valid_fast(object, 
-                                                                 df$R, df$B, df$C, 
-                                                                 MVPF_max, Cost_max, df$indiv_MVPF),  # Initialize valid population
-  seed = 42           # Seed for reproducibility
-)
-
-
-
-# Print the results of the optimal policy
-cat("Maximized revenue:", sum(ga_result@solution * df$R), "\n")
-
-# Check the MVPF of the final solution
-final_W <- ga_result@solution
-final_numerator <- sum(final_W * (df$R + df$B))
-final_denominator <- sum(final_W * (df$R - df$C))
-final_mvp <- final_numerator / final_denominator
-
-# Calculate the total cost for the optimal policy
-total_cost <- sum(final_W * df$C)
-
-# Print the final MVPF and total cost
-cat("Final MVPF:", final_mvp, "\n")
-cat("Total cost of the optimal policy:", total_cost, "\n")
-
-
-
-# Create a data frame for plotting
-iterations <- seq_along(revenue_history)  # Sequence of iterations
-plot_data <- data.frame(
-  Iteration = iterations,
-  Total_Revenue = revenue_history,
-  Aggregate_MVPF = mvpf_history
-)
-plot_data <- plot_data %>%
-  mutate(Cumulative_Max_Revenue = cummax(Total_Revenue),
-         Corresponding_MVPF = Aggregate_MVPF[match(Cumulative_Max_Revenue, Total_Revenue)])
-
-par(mar = c(5, 4, 4, 5))
-
-twoord.plot(
-  lx = plot_data$Iteration, ly = plot_data$Cumulative_Max_Revenue,
-  rx = plot_data$Iteration, ry = plot_data$Corresponding_MVPF,
-  lylim = range(plot_data$Cumulative_Max_Revenue, na.rm = TRUE),
-  rylim = range(plot_data$Corresponding_MVPF, na.rm = TRUE),
-  lcol = "blue", rcol = "red",
-  xlab = "Iteration", ylab = "Cumulative Max Revenue", rylab = "Aggregate MVPF",
-  main = "Genetic Algorithm Policy Convergence",
-  type = c("l", "l"),
-  do.first = "grid()"
-)
-axis(side = 2, at = pretty(plot_data$Cumulative_Max_Revenue), 
-     las = 0, col.axis = "blue", col = "blue")
-
-
-
 # Define Genetic Algorithm ---------------------------------
-
-# # Define the fitness function: total revenue
-# fitness_function <- function(W, R) {
-#   return(sum(W * R))  # Fitness is total revenue
-# }
 
 # Define the MVPF constraint
 mvpf_constraint <- function(W, R, B, C, MVPF_max) {
@@ -632,10 +361,6 @@ initialize_population_valid_fast <- function(object, R, B, C, MVPF_max, Cost_max
 
 # Policy 2a: Revenue max, MVPF constraint, no cost constraint ------------------
 
-# vectors to store revenues and MVPFs across iterations
-revenue_history <- c()
-mvpf_history <- c()
-
 # Maximum allowable cost and MVPF
 MVPF_max <- 1.5
 Cost_max <- NULL
@@ -643,76 +368,114 @@ Cost_max <- NULL
 # Set to TRUE to enforce the cost constraint, FALSE to ignore it
 cost_constraint <- FALSE  
 
-ga_result <- ga(
-  type = "binary",
-  fitness = function(W) evaluation_function(W, df$R, df$B, df$C, MVPF_max, Cost_max, cost_constraint),
-  nBits = nrow(df),   # Number of bits equal to number of individuals
-  popSize = 200,      # Population size
-  maxiter = 5000,     # Maximum number of generations
-  run = 50,           # Stop if no improvement for 50 generations
-  pmutation = 0.2,    # Higher mutation rate to allow for exploration
-  population = function(object) initialize_population_valid_fast(object, 
-                                                                 df$R, df$B, df$C, 
-                                                                 MVPF_max, Cost_max, 
-                                                                 df$indiv_MVPF, 
-                                                                 cost_constraint),  # Initialize valid population
-  seed = 42           # Seed for reproducibility
-)
+# Define the list of concavity parameters to optimize on
+alpha_values <- c(0, 0.2, 0.5)
 
-# Print the results of the optimal policy
-cat("Maximized revenue:", sum(ga_result@solution * df$R), "\n")
+# Function to scale R and B based on income and alpha
+scale_R_B <- function(R, B, income, alpha, mean_income) {
+  R_scaled <- (income^alpha / mean_income^alpha) * R
+  B_scaled <- (mean_income^alpha / income^alpha) * B
+  return(list(R_scaled = R_scaled, B_scaled = B_scaled))
+}
 
-# Check the MVPF of the final solution
-final_W <- ga_result@solution
-final_numerator <- sum(final_W * (df$R + df$B))
-final_denominator <- sum(final_W * (df$R - df$C))
-final_mvpf <- final_numerator / final_denominator
+# Calculate the mean income once
+mean_income <- mean(df$income)
 
-# Calculate the total cost for the optimal policy
-total_cost <- sum(final_W * df$C)
+for (alpha in alpha_values) {
+  cat("Running GA for alpha =", alpha, "\n")
+  
+  # Scale R and B using the current value of alpha
+  scaled_values <- scale_R_B(df$R, df$B, df$income, alpha, mean_income)
+  R_scaled <- scaled_values$R_scaled
+  B_scaled <- scaled_values$B_scaled
+  
+  # vectors to store revenues and MVPFs across iterations
+  revenue_history <- c()
+  mvpf_history <- c()
+  
+  # Run the GA with the scaled R and B values
+  ga_result <- ga(
+    type = "binary",
+    fitness = function(W) evaluation_function(W, R_scaled, B_scaled, df$C, MVPF_max, Cost_max, cost_constraint),
+    nBits = nrow(df),   # Number of bits equal to number of individuals
+    popSize = 100,      # Population size
+    maxiter = 5000,     # Maximum number of generations
+    run = 50,           # Stop if no improvement for 50 generations
+    pmutation = 0.2,    # Higher mutation rate to allow for exploration
+    population = function(object) initialize_population_valid_fast(object, 
+                                                                   R_scaled, B_scaled, df$C, 
+                                                                   MVPF_max, Cost_max, 
+                                                                   df$indiv_MVPF, 
+                                                                   cost_constraint),  # Initialize valid population
+    seed = 42           # Seed for reproducibility
+  )
+  
+  # Print the results of the optimal policy for this alpha
+  cat("Maximized revenue for alpha =", alpha, ":", sum(ga_result@solution * R_scaled), "\n")
+  
+  # Check the MVPF of the final solution
+  final_W <- ga_result@solution
+  final_numerator <- sum(final_W * (R_scaled + B_scaled))
+  final_denominator <- sum(final_W * (R_scaled - df$C))
+  final_mvpf <- final_numerator / final_denominator
+  
+  # Calculate the total cost for the optimal policy
+  total_cost <- sum(final_W * df$C)
+  
+  # Print the final MVPF and total cost
+  cat("Final MVPF for alpha =", alpha, ":", final_mvpf, "\n")
+  cat("Total cost of the optimal policy for alpha =", alpha, ":", total_cost, "\n")
+  
+  # Save the optimal allocation to the original dataframe
+  column_name <- paste0("opt_2a_a", gsub("\\.", "", as.character(alpha)))
+  final_W_df <- data.frame(t(final_W))
+  names(final_W_df) <- column_name
+  df[[column_name]] <- final_W_df[[column_name]]
+  
+  
+  # Create a data frame for plotting convergence
+  iterations <- seq_along(revenue_history)
+  plot_data <- data.frame(
+    Iteration = iterations,
+    Total_Revenue = revenue_history,
+    Aggregate_MVPF = mvpf_history
+  )
+  plot_data <- plot_data %>%
+    mutate(Cumulative_Max_Revenue = cummax(Total_Revenue),
+           Corresponding_MVPF = Aggregate_MVPF[match(Cumulative_Max_Revenue, Total_Revenue)])
+  
+  # Set the figure file name based on the alpha value
+  figure_file <- paste0("GA_convergence_2a_a", gsub("\\.", "", as.character(alpha)), ".png")
+  
+  # Save the plot as a PNG file
+  png(filename = file.path(figures_output_path, figure_file), width = 800, height = 600)
+  
+  par(mar = c(5, 4, 4, 5))  # Set margins for the plot
+  
+  # Generate the plot using twoord.plot
+  twoord.plot(
+    lx = plot_data$Iteration, ly = plot_data$Cumulative_Max_Revenue,
+    rx = plot_data$Iteration, ry = plot_data$Corresponding_MVPF,
+    lylim = range(plot_data$Cumulative_Max_Revenue, na.rm = TRUE),
+    rylim = range(plot_data$Corresponding_MVPF, na.rm = TRUE),
+    lcol = "blue", rcol = "red",
+    xlab = "Iteration", ylab = "Revenue of Best Policy", rylab = "MVPF of Best Policy",
+    main = paste("Genetic Algorithm Policy Convergence for alpha =", alpha),
+    type = c("l", "l"),
+    do.first = "grid()"
+  )
+  
+  # Add axis labels
+  axis(side = 2, at = pretty(plot_data$Cumulative_Max_Revenue), las = 0, col.axis = "blue", col = "blue")
+  
+  # Finalize and save the plot
+  dev.off()
+  
+}
 
-# Print the final MVPF and total cost
-cat("Final MVPF:", final_mvpf, "\n")
-cat("Total cost of the optimal policy:", total_cost, "\n")
 
-
-# Create a data frame for plotting convergence
-iterations <- seq_along(revenue_history)  
-plot_data <- data.frame(
-  Iteration = iterations,
-  Total_Revenue = revenue_history,
-  Aggregate_MVPF = mvpf_history
-)
-plot_data <- plot_data %>%
-  mutate(Cumulative_Max_Revenue = cummax(Total_Revenue),
-         Corresponding_MVPF = Aggregate_MVPF[match(Cumulative_Max_Revenue, Total_Revenue)])
-
-par(mar = c(5, 4, 4, 5))
-
-png(filename = file.path(figures_output_path, "GA_convergence_2a.png"), 
-    width = 800, height = 600)
-
-twoord.plot(
-  lx = plot_data$Iteration, ly = plot_data$Cumulative_Max_Revenue,
-  rx = plot_data$Iteration, ry = plot_data$Corresponding_MVPF,
-  lylim = range(plot_data$Cumulative_Max_Revenue, na.rm = TRUE),
-  rylim = range(plot_data$Corresponding_MVPF, na.rm = TRUE),
-  lcol = "blue", rcol = "red",
-  xlab = "Iteration", ylab = "Revenue of Best Policy", rylab = "MVPF of Best Policy",
-  main = "Genetic Algorithm Policy Convergence",
-  type = c("l", "l"),
-  do.first = "grid()"
-)
-axis(side = 2, at = pretty(plot_data$Cumulative_Max_Revenue), 
-     las = 0, col.axis = "blue", col = "blue")
-
-dev.off()
 
 # Policy 2b: Revenue max, MVPF and cost constraints -----------------------
-
-# vectors to store revenues and MVPFs across iterations
-revenue_history <- c()
-mvpf_history <- c()
 
 # Maximum allowable cost and MVPF
 MVPF_max <- 1.5
@@ -721,70 +484,110 @@ Cost_max <- 200
 # Set to TRUE to enforce the cost constraint, FALSE to ignore it
 cost_constraint <- TRUE  
 
-ga_result <- ga(
-  type = "binary",
-  fitness = function(W) evaluation_function(W, df$R, df$B, df$C, MVPF_max, Cost_max, cost_constraint),
-  nBits = nrow(df),   # Number of bits equal to number of individuals
-  popSize = 200,      # Population size
-  maxiter = 5000,     # Maximum number of generations
-  run = 50,           # Stop if no improvement for 50 generations
-  pmutation = 0.2,    # Higher mutation rate to allow for exploration
-  population = function(object) initialize_population_valid_fast(object, 
-                                                                 df$R, df$B, df$C, 
-                                                                 MVPF_max, Cost_max, 
-                                                                 df$indiv_MVPF, 
-                                                                 cost_constraint),  # Initialize valid population
-  seed = 42           # Seed for reproducibility
-)
+# Define the list of concavity parameters to optimize on
+alpha_values <- c(0, 0.2, 0.5)
 
-# Print the results of the optimal policy
-cat("Maximized revenue:", sum(ga_result@solution * df$R), "\n")
+# Function to scale R and B based on income and alpha
+scale_R_B <- function(R, B, income, alpha, mean_income) {
+  R_scaled <- (income^alpha / mean_income^alpha) * R
+  B_scaled <- (mean_income^alpha / income^alpha) * B
+  return(list(R_scaled = R_scaled, B_scaled = B_scaled))
+}
 
-# Check the MVPF of the final solution
-final_W <- ga_result@solution
-final_numerator <- sum(final_W * (df$R + df$B))
-final_denominator <- sum(final_W * (df$R - df$C))
-final_mvpf <- final_numerator / final_denominator
+# Calculate the mean income once
+mean_income <- mean(df$income)
 
-# Calculate the total cost for the optimal policy
-total_cost <- sum(final_W * df$C)
-
-# Print the final MVPF and total cost
-cat("Final MVPF:", final_mvpf, "\n")
-cat("Total cost of the optimal policy:", total_cost, "\n")
-
-
-# Create a data frame for plotting convergence
-iterations <- seq_along(revenue_history)  
-plot_data <- data.frame(
-  Iteration = iterations,
-  Total_Revenue = revenue_history,
-  Aggregate_MVPF = mvpf_history
-)
-plot_data <- plot_data %>%
-  mutate(Cumulative_Max_Revenue = cummax(Total_Revenue),
-         Corresponding_MVPF = Aggregate_MVPF[match(Cumulative_Max_Revenue, Total_Revenue)])
-
-par(mar = c(5, 4, 4, 5))
-
-png(filename = file.path(figures_output_path, "GA_convergence_2b.png"), 
-    width = 800, height = 600)
-
-twoord.plot(
-  lx = plot_data$Iteration, ly = plot_data$Cumulative_Max_Revenue,
-  rx = plot_data$Iteration, ry = plot_data$Corresponding_MVPF,
-  lylim = range(plot_data$Cumulative_Max_Revenue, na.rm = TRUE),
-  rylim = range(plot_data$Corresponding_MVPF, na.rm = TRUE),
-  lcol = "blue", rcol = "red",
-  xlab = "Iteration", ylab = "Revenue of Best Policy", rylab = "MVPF of Best Policy",
-  main = "Genetic Algorithm Policy Convergence",
-  type = c("l", "l"),
-  do.first = "grid()"
-)
-axis(side = 2, at = pretty(plot_data$Cumulative_Max_Revenue), 
-     las = 0, col.axis = "blue", col = "blue")
-
-dev.off()
+for (alpha in alpha_values) {
+  cat("Running GA for alpha =", alpha, "\n")
+  
+  # Scale R and B using the current value of alpha
+  scaled_values <- scale_R_B(df$R, df$B, df$income, alpha, mean_income)
+  R_scaled <- scaled_values$R_scaled
+  B_scaled <- scaled_values$B_scaled
+  
+  # vectors to store revenues and MVPFs across iterations
+  revenue_history <- c()
+  mvpf_history <- c()
+  
+  # Run the GA with the scaled R and B values
+  ga_result <- ga(
+    type = "binary",
+    fitness = function(W) evaluation_function(W, R_scaled, B_scaled, df$C, MVPF_max, Cost_max, cost_constraint),
+    nBits = nrow(df),   # Number of bits equal to number of individuals
+    popSize = 100,      # Population size
+    maxiter = 5000,     # Maximum number of generations
+    run = 50,           # Stop if no improvement for 50 generations
+    pmutation = 0.2,    # Higher mutation rate to allow for exploration
+    population = function(object) initialize_population_valid_fast(object, 
+                                                                   R_scaled, B_scaled, df$C, 
+                                                                   MVPF_max, Cost_max, 
+                                                                   df$indiv_MVPF, 
+                                                                   cost_constraint),  # Initialize valid population
+    seed = 42           # Seed for reproducibility
+  )
+  
+  # Print the results of the optimal policy for this alpha
+  cat("Maximized revenue for alpha =", alpha, ":", sum(ga_result@solution * R_scaled), "\n")
+  
+  # Check the MVPF of the final solution
+  final_W <- ga_result@solution
+  final_numerator <- sum(final_W * (R_scaled + B_scaled))
+  final_denominator <- sum(final_W * (R_scaled - df$C))
+  final_mvpf <- final_numerator / final_denominator
+  
+  # Calculate the total cost for the optimal policy
+  total_cost <- sum(final_W * df$C)
+  
+  # Print the final MVPF and total cost
+  cat("Final MVPF for alpha =", alpha, ":", final_mvpf, "\n")
+  cat("Total cost of the optimal policy for alpha =", alpha, ":", total_cost, "\n")
+  
+  # Save the optimal allocation to the original dataframe
+  column_name <- paste0("opt_2a_a", gsub("\\.", "", as.character(alpha)))
+  final_W_df <- data.frame(t(final_W))
+  names(final_W_df) <- column_name
+  df[[column_name]] <- final_W_df[[column_name]]
+  
+  
+  # Create a data frame for plotting convergence
+  iterations <- seq_along(revenue_history)
+  plot_data <- data.frame(
+    Iteration = iterations,
+    Total_Revenue = revenue_history,
+    Aggregate_MVPF = mvpf_history
+  )
+  plot_data <- plot_data %>%
+    mutate(Cumulative_Max_Revenue = cummax(Total_Revenue),
+           Corresponding_MVPF = Aggregate_MVPF[match(Cumulative_Max_Revenue, Total_Revenue)])
+  
+  # Set the figure file name based on the alpha value
+  figure_file <- paste0("GA_convergence_2b_a", gsub("\\.", "", as.character(alpha)), ".png")
+  
+  # Save the plot as a PNG file
+  png(filename = file.path(figures_output_path, figure_file), width = 800, height = 600)
+  
+  par(mar = c(5, 4, 4, 5))  # Set margins for the plot
+  
+  # Generate the plot using twoord.plot
+  twoord.plot(
+    lx = plot_data$Iteration, ly = plot_data$Cumulative_Max_Revenue,
+    rx = plot_data$Iteration, ry = plot_data$Corresponding_MVPF,
+    lylim = range(plot_data$Cumulative_Max_Revenue, na.rm = TRUE),
+    rylim = range(plot_data$Corresponding_MVPF, na.rm = TRUE),
+    lcol = "blue", rcol = "red",
+    xlab = "Iteration", ylab = "Revenue of Best Policy", rylab = "MVPF of Best Policy",
+    main = paste("Genetic Algorithm Policy Convergence for alpha =", alpha),
+    type = c("l", "l"),
+    do.first = "grid()"
+  )
+  
+  # Add axis labels
+  axis(side = 2, at = pretty(plot_data$Cumulative_Max_Revenue), las = 0, col.axis = "blue", col = "blue")
+  
+  # Finalize and save the plot
+  dev.off()
+  
+}
 
 
 
