@@ -54,8 +54,17 @@ df <- generate_dataset(n=1000)
 ############# Minimize MVPF problems ##############
 ###################################################
 
+# Define Mini-Batch Stochastic Gradient Descent algorithm -----------------------
 
-# Mini-batch stochastic gradient descent with individual updating ------------------
+# Function to scale R and B based on income and alpha
+scale_R_B <- function(R, B, income, alpha, mean_income) {
+  R_scaled <- (income^alpha / mean_income^alpha) * R
+  B_scaled <- (mean_income^alpha / income^alpha) * B
+  return(list(R_scaled = R_scaled, B_scaled = B_scaled))
+}
+
+# Calculate the mean income
+mean_income <- mean(df$income)
 
 # Define the objective function
 objective_function <- function(R, B, C, treatment) {
@@ -71,94 +80,8 @@ gradient <- function(R, B, C, treatment, i) {
   return((numerator_1 - numerator_2) / sum(treatment * (R - C))^2)
 }
 
-# Function to determine initial treatment allocation greedily (this increases speed by not relying on
-# random sampling to determine the initial allocation, which in large samples may take a long time to
-# produce a valid initial allocation)
-initialize_treatment <- function(df, bar_R) {
-  # Sort individuals by R_i in descending order
-  sorted_indices <- order(df$R, decreasing = TRUE)
-  
-  # Initialize treatment to zeros (no one treated)
-  treatment <- rep(0, nrow(df))
-  
-  # Greedily assign treatment starting from the highest R_i
-  total_R <- 0
-  for (i in sorted_indices) {
-    treatment[i] <- 1  # Assign treatment
-    total_R <- total_R + df$R[i]
-    if (total_R >= bar_R) break  # Stop when the constraint is satisfied
-  }
-  
-  # Randomly assign treatment to the remaining individuals
-  remaining_indices <- setdiff(1:nrow(df), which(treatment == 1))
-  treatment[remaining_indices] <- sample(0:1, length(remaining_indices), replace = TRUE)
-  
-  return(treatment)
-}
-
-# Mini-batch SGD implementation with individual updates based on gradients
-mini_batch_sgd <- function(df, bar_R, batch_size, learning_rate = 0.01, max_iter) {
-  
-  # Initial random treatment allocation (0 or 1)
-  n <- nrow(df)
-  treatment <- initialize_treatment(df, bar_R)
-  
-  # Store objective function values
-  obj_values <- numeric(max_iter)
-  
-  for (iter in 1:max_iter) {
-    # Randomly select a mini-batch
-    batch_indices <- sample(1:n, batch_size)
-    
-    # For each individual in the mini-batch, calculate the gradient and update treatment
-    for (i in batch_indices) {
-      grad <- gradient(df$R, df$B, df$C, treatment, i)
-      
-      # Update treatment based on gradient
-      if (grad > 0) {
-        treatment[i] <- 0  # Turn off treatment if gradient is positive
-      } else {
-        treatment[i] <- 1  # Turn on treatment if gradient is negative
-      }
-    }
-    
-    # Ensure that the constraint is satisfied (adjust if violated)
-    if (sum(treatment * df$R) < bar_R) {
-      # Restore treatment for individuals with highest R to meet the constraint
-      top_r_index <- order(df$R, decreasing = TRUE)
-      for (j in top_r_index) {
-        if (treatment[j] == 0) {
-          treatment[j] <- 1
-          if (sum(treatment * df$R) >= bar_R) break
-        }
-      }
-    }
-    
-    # Calculate and store the objective function value
-    obj_values[iter] <- objective_function(df$R, df$B, df$C, treatment)
-  }
-  
-  # Return the final treatment allocation and objective function values
-  return(list(treatment = treatment, obj_values = obj_values))
-}
-
-# Run the mini-batch SGD algorithm on the generated dataset with \bar{R} = 500
-result_mini_batch <- mini_batch_sgd(df, bar_R = 3000, batch_size = 50, max_iter = 15000)
-
-# Print results
-cat("Final treatment allocation (mini-batch):", sum(result_mini_batch$treatment), "\n")
-cat("Final objective function value (mini-batch):", tail(result_mini_batch$obj_values, 1), "\n")
-
-# Plot the objective function over iterations
-plot(result_mini_batch$obj_values, type = "l", col = "red", main = "Objective Function Over Iterations (Mini-batch)", 
-     xlab = "Iteration", ylab = "MVPF Value")
-
-
-
-
-# Adding the optional cost constraint to the mini-batch SGD algorithm ---------------------------
-
-initialize_treatment_with_constraints <- function(df, bar_R, bar_C) {
+# Initialize treatment with optional cost constraint
+initialize_treatment_with_constraints <- function(df, bar_R, bar_C, cost_constraint) {
   # Sort individuals by R_i in descending order
   sorted_indices <- order(df$R, decreasing = TRUE)
   
@@ -169,18 +92,18 @@ initialize_treatment_with_constraints <- function(df, bar_R, bar_C) {
   total_R <- 0
   total_C <- 0
   for (i in sorted_indices) {
-    if (total_R < bar_R && (total_C + df$C[i]) <= bar_C) {
+    if (total_R < bar_R && (!cost_constraint || (total_C + df$C[i]) <= bar_C)) {
       treatment[i] <- 1  # Assign treatment
       total_R <- total_R + df$R[i]
       total_C <- total_C + df$C[i]
     }
-    if (total_R >= bar_R && total_C <= bar_C) break  # Stop when both constraints are satisfied
+    if (total_R >= bar_R && (!cost_constraint || total_C <= bar_C)) break  # Stop when both constraints are satisfied
   }
   
   # Randomly assign treatment to the remaining individuals while respecting \bar{C}
   remaining_indices <- setdiff(1:nrow(df), which(treatment == 1))
   for (i in remaining_indices) {
-    if ((total_C + df$C[i]) <= bar_C) {
+    if (!cost_constraint || (total_C + df$C[i]) <= bar_C) {
       treatment[i] <- sample(0:1, 1)  # Randomly assign 0 or 1
       if (treatment[i] == 1) total_C <- total_C + df$C[i]
     }
@@ -189,12 +112,11 @@ initialize_treatment_with_constraints <- function(df, bar_R, bar_C) {
   return(treatment)
 }
 
-
-# Mini-batch SGD with additional constraint on C
-mini_batch_sgd_cost <- function(df, bar_R, bar_C, batch_size, learning_rate = 0.01, max_iter) {
+# Mini-batch SGD with optional cost constraint
+mini_batch_sgd_cost <- function(df, bar_R, bar_C, batch_size, max_iter, cost_constraint) {
   
   # Initialize treatment with both constraints
-  treatment <- initialize_treatment_with_constraints(df, bar_R, bar_C)
+  treatment <- initialize_treatment_with_constraints(df, bar_R, bar_C, cost_constraint)
   
   # Store objective function values
   obj_values <- numeric(max_iter)
@@ -226,8 +148,8 @@ mini_batch_sgd_cost <- function(df, bar_R, bar_C, batch_size, learning_rate = 0.
       }
     }
     
-    # Ensure that the constraint \sum_i C_i <= \bar{C} is satisfied
-    if (sum(treatment * df$C) > bar_C) {
+    # Ensure that the constraint \sum_i C_i <= \bar{C} is satisfied (if cost_constraint is TRUE)
+    if (cost_constraint && sum(treatment * df$C) > bar_C) {
       top_c_index <- order(df$C, decreasing = TRUE)
       for (j in top_c_index) {
         if (treatment[j] == 1) {
@@ -248,10 +170,10 @@ mini_batch_sgd_cost <- function(df, bar_R, bar_C, batch_size, learning_rate = 0.
   final_obj_value <- tail(obj_values, 1)
   
   # Print out the final results
-  cat("Final treatment allocation (mini-batch with constraints):", num_treated, "\n")
-  cat("Total Revenue (sum R):", total_revenue, "\n")
+  cat("Final treatment allocation (total number treated):", num_treated, "\n")
+  cat("Total Preference-weighted Revenue (sum R):", total_revenue, "\n")
   cat("Total Cost (sum C):", total_cost, "\n")
-  cat("Final Objective Function Value:", final_obj_value, "\n")
+  cat("Final MVPF Value:", final_obj_value, "\n")
   
   # Return the final treatment allocation, objective function values, and metrics
   return(list(treatment = treatment, obj_values = obj_values, 
@@ -259,18 +181,54 @@ mini_batch_sgd_cost <- function(df, bar_R, bar_C, batch_size, learning_rate = 0.
               num_treated = num_treated, final_obj_value = final_obj_value))
 }
 
-# Run the modified mini-batch SGD algorithm with both constraints
-result_mbsgd <- mini_batch_sgd_cost(df,
-                                    bar_R = 5000, 
-                                    bar_C = 1000, 
-                                    batch_size = 64, 
-                                    max_iter = 20000)
+# Loop through alpha values and optimize
+optimize_for_alpha <- function(df, alpha_values, bar_R, bar_C, batch_size, max_iter, cost_constraint) {
+  mean_income <- mean(df$income)
+  
+  for (alpha in alpha_values) {
+    cat("Optimizing for alpha =", alpha, "\n")
+    
+    # Scale R and B using the current value of alpha
+    scaled_values <- scale_R_B(df$R, df$B, df$income, alpha, mean_income)
+    df$R <- scaled_values$R_scaled
+    df$B <- scaled_values$B_scaled
+    
+    # Run the mini-batch SGD with the given constraints
+    result_mbsgd <- mini_batch_sgd_cost(df, bar_R, bar_C, batch_size, max_iter = max_iter, cost_constraint = cost_constraint)
+    
+    # Dynamic plot naming based on if we enforce the cost constraint
+    if (cost_constraint) {
+      plot_file <- paste0("SGD_convergence_1b_", gsub("\\.", "", as.character(alpha)), ".png")
+    } else {
+      plot_file <- paste0("SGD_convergence_1a_", gsub("\\.", "", as.character(alpha)), ".png")
+    }
+    
+    # Save the plot
+    png(filename = file.path(figures_output_path, plot_file), width = 800, height = 600)
+    
+    plot(result_mbsgd$obj_values, type = "l", col = "red", 
+         main = paste("MVPF Convergence (Alpha =", alpha, ")"), 
+         xlab = "Iteration", ylab = "MVPF Value")
+    
+    dev.off()
+  }
+}
 
-# Plot the objective function over iterations
-plot(result_mbsgd$obj_values, type = "l", col = "blue", 
-     main = "Objective Function Over Iterations (Mini-batch with Constraints)", 
-     xlab = "Iteration", ylab = "MVPF Value")
+# Policy 1a: MVPF minimization, minimum revenue constraint ---------------------
 
+alpha_values <- c(0, 0.2, 0.5)
+optimize_for_alpha(df, alpha_values, 
+                   bar_R = 5000, bar_C = NULL, 
+                   batch_size = 64, max_iter = 2000, 
+                   cost_constraint = FALSE)
+
+# Policy 1b: MVPF minimization, minimum revenue and maximum cost constraint ----------------
+
+alpha_values <- c(0, 0.2, 0.5)
+optimize_for_alpha(df, alpha_values, 
+                   bar_R = 5000, bar_C = 1000, 
+                   batch_size = 64, max_iter = 2000, 
+                   cost_constraint = TRUE)
 
 
 ################################################
@@ -331,7 +289,7 @@ initialize_population_valid_fast <- function(object, R, B, C, MVPF_max, Cost_max
   n <- object@nBits
   pop <- matrix(0, nrow = object@popSize, ncol = n)
   
-  # Step 1: Filter individuals with individual MVPF <= MVPF_max
+  # Filter individuals with individual MVPF <= MVPF_max
   valid_indices <- which(individual_MVPF <= MVPF_max)
   valid_pool_size <- length(valid_indices)
   
