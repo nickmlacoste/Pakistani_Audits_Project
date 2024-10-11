@@ -199,8 +199,10 @@ optimize_for_alpha <- function(df, alpha_values, bar_R, bar_C, batch_size, max_i
     # Dynamic plot naming based on if we enforce the cost constraint
     if (cost_constraint) {
       plot_file <- paste0("SGD_convergence_1b_", gsub("\\.", "", as.character(alpha)), ".png")
+      col_name <- paste0("W_opt_1b_", gsub("\\.", "", as.character(alpha)))
     } else {
       plot_file <- paste0("SGD_convergence_1a_", gsub("\\.", "", as.character(alpha)), ".png")
+      col_name <- paste0("W_opt_1a_", gsub("\\.", "", as.character(alpha)))
     }
     
     # Save the plot
@@ -211,24 +213,35 @@ optimize_for_alpha <- function(df, alpha_values, bar_R, bar_C, batch_size, max_i
          xlab = "Iteration", ylab = "MVPF Value")
     
     dev.off()
+    
+    # Append the optimal policy as a column to df
+    df[[col_name]] <- result_mbsgd$treatment
+    
   }
+  
+  return(df)
+  
 }
 
 # Policy 1a: MVPF minimization, minimum revenue constraint ---------------------
 
 alpha_values <- c(0, 0.2, 0.5)
-optimize_for_alpha(df, alpha_values, 
-                   bar_R = 5000, bar_C = NULL, 
-                   batch_size = 64, max_iter = 2000, 
-                   cost_constraint = FALSE)
+df <- optimize_for_alpha(df, alpha_values, 
+                         bar_R = 5000, bar_C = NULL, 
+                         batch_size = 64, max_iter = 2000, 
+                         cost_constraint = FALSE)
+
+write.csv(df, file.path(data_path, "tax_returns_post_opt.csv"), row.names = FALSE)
 
 # Policy 1b: MVPF minimization, minimum revenue and maximum cost constraint ----------------
 
 alpha_values <- c(0, 0.2, 0.5)
-optimize_for_alpha(df, alpha_values, 
-                   bar_R = 5000, bar_C = 1000, 
-                   batch_size = 64, max_iter = 2000, 
-                   cost_constraint = TRUE)
+df <- optimize_for_alpha(df, alpha_values, 
+                         bar_R = 5000, bar_C = 1000, 
+                         batch_size = 64, max_iter = 2000, 
+                         cost_constraint = TRUE)
+
+write.csv(df, file.path(data_path, "tax_returns_post_opt.csv"), row.names = FALSE)
 
 
 ################################################
