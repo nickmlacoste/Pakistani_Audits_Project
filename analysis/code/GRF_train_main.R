@@ -13,7 +13,7 @@ library(grf)
 library(xtable)
 
 data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
-figures_output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Pakistan_Audits_Project/analysis/output"
+figures_output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Pakistani_Audits_Project/analysis/output"
 cf_output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Large_Output"
 
 # Import 2013-2021 tax returns 
@@ -128,17 +128,29 @@ if (train_2017_model) {
 }
 
 
-# generate CATE predictions on 2017 returns data (year 2018) via leave-one-out CF estimates -----------
+# generate CATE predictions on 2017 returns data (year 2018) ----------------
 
-cate_hats_2018 <- predict(
-  object = cf_model_17,
-  newdata = tax_returns_df_18[, X_covariates],
-  drop = TRUE, # removes the unnecessary dimension for multiple treat arms
-  estimate.variance = FALSE
-)
+#I'm also generating predictions for in-sample data using leave-one-out estimates
+cate_hats_2017 <- as.data.frame(
+  predict(
+    object = cf_model_17,
+    newdata = NULL,
+    drop = TRUE,
+    estimate.variance = FALSE
+))
+colnames(cate_hats_2017) <- c("NPV_revenue_cate", "audit_cost_cate", "burden_cate")
 
-cate_hats_2018 <- as.data.frame(cate_hats_2018$predictions)
+#these are the out-of-bag predictions used for policy derivation
+cate_hats_2018 <- as.data.frame(
+  predict(
+    object = cf_model_17,
+    newdata = tax_returns_df_18[, X_covariates],
+    drop = TRUE, # removes the unnecessary dimension for multiple treat arms
+    estimate.variance = FALSE
+)$predictions)
 colnames(cate_hats_2018) <- c("NPV_revenue_cate", "audit_cost_cate", "burden_cate")
+
+
 
 # merge the predictions in with the 2018 data
 tax_returns_df_18 <- tax_returns_df_18 %>%
@@ -146,6 +158,62 @@ tax_returns_df_18 <- tax_returns_df_18 %>%
 cate_hats_2018 <- cate_hats_2018 %>%
   mutate(index = row_number())
 tax_returns_df_18 <- left_join(tax_returns_df_18, cate_hats_2018, by = "index")
+
+
+# Distributions of treatment effects --------------------------
+
+ATEs <- average_treatment_effect(cf_model_17)
+
+# distribution of NPV revenue predictions:
+plot <- ggplot(cate_hats_2017, aes(x = NPV_revenue_cate)) +
+  geom_histogram(binwidth = 100000, color = "black", alpha = 0.7) +  
+  labs(title = "Distribution of Estimated Treatment Effects: R", 
+       x = "Treatment Effect: R", 
+       y = "Frequency") +
+  geom_vline(aes(xintercept = ATEs[1,1]), color = "red", linetype = "dashed", size = 1) + 
+  geom_text(aes(x = ATEs[1,1], y = 4, label = paste("ATE =", round(ATEs[1,1], 2))), 
+            vjust = -0.5, hjust = 1.2, color = "red", size = 5) +
+  theme_minimal()
+
+ggsave(filename = file.path(figures_output_path, "cate_dist_R.png"), plot = plot, 
+       width = 8, height = 6, dpi = 300)
+
+# distribution of audit cost predictions:
+plot <- ggplot(cate_hats_2017, aes(x = audit_cost_cate)) +
+  geom_histogram(binwidth = 100, color = "black", alpha = 0.7) +  
+  labs(title = "Distribution of Estimated Treatment Effects: C", 
+       x = "Treatment Effect: C", 
+       y = "Frequency") +
+  geom_vline(aes(xintercept = ATEs[2,1]), color = "red", linetype = "dashed", size = 1) + 
+  geom_text(aes(x = ATEs[2,1], y = 4, label = paste("ATE =", round(ATEs[2,1], 2))), 
+            vjust = -0.5, hjust = 1.2, color = "red", size = 5) +
+  theme_minimal()
+
+ggsave(filename = file.path(figures_output_path, "cate_dist_C.png"), plot = plot, 
+       width = 8, height = 6, dpi = 300)
+
+# distribution of burden predictions:
+plot <- ggplot(cate_hats_2017, aes(x = burden_cate)) +
+  geom_histogram(binwidth = 100, color = "black", alpha = 0.7) +  
+  labs(title = "Distribution of Estimated Treatment Effects: B", 
+       x = "Treatment Effect: B", 
+       y = "Frequency") +
+  geom_vline(aes(xintercept = ATEs[3,1]), color = "red", linetype = "dashed", size = 1) + 
+  geom_text(aes(x = ATEs[3,1], y = 4, label = paste("ATE =", round(ATEs[3,1], 2))), 
+            vjust = -0.5, hjust = 1.2, color = "red", size = 5) +
+  theme_minimal()
+
+ggsave(filename = file.path(figures_output_path, "cate_dist_B.png"), plot = plot, 
+       width = 8, height = 6, dpi = 300)
+
+
+
+
+
+
+
+
+
 
 
 # export data for optimization ---------------------------
