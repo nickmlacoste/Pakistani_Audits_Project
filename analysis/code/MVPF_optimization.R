@@ -357,7 +357,7 @@ for (alpha in alpha_values) {
     fitness = function(W) evaluation_function(W, R_scaled, B_scaled, df$C, MVPF_max, Cost_max, cost_constraint),
     nBits = nrow(df),   # Number of bits equal to number of individuals
     popSize = 100,      # Population size
-    maxiter = 5000,     # Maximum number of generations
+    maxiter = 1000,     # Maximum number of generations
     run = 50,           # Stop if no improvement for 50 generations
     pmutation = 0.2,    # Higher mutation rate to allow for exploration
     population = function(object) initialize_population_valid_fast(object, 
@@ -473,7 +473,7 @@ for (alpha in alpha_values) {
     fitness = function(W) evaluation_function(W, R_scaled, B_scaled, df$C, MVPF_max, Cost_max, cost_constraint),
     nBits = nrow(df),   # Number of bits equal to number of individuals
     popSize = 100,      # Population size
-    maxiter = 5000,     # Maximum number of generations
+    maxiter = 1000,     # Maximum number of generations
     run = 50,           # Stop if no improvement for 50 generations
     pmutation = 0.2,    # Higher mutation rate to allow for exploration
     population = function(object) initialize_population_valid_fast(object, 

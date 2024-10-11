@@ -97,7 +97,7 @@ W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current))
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
-train_2017_model <- TRUE # 2017 data is from 2016 tax returns
+train_2017_model <- FALSE # 2017 data is from 2016 tax returns
 
 if (train_2017_model) {
   

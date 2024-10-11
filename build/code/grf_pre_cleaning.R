@@ -80,8 +80,8 @@ for (year in years) {
   tax_returns_df[[npv_column_name]] <- map_dbl(1:nrow(tax_returns_df), ~ calculate_npv(tax_returns_df[., ], year))
 }
 
-View(tax_returns_df %>%
-  select(starts_with("nettaxchargeable_"), starts_with("NPV_taxrevenue_")))
+# View(tax_returns_df %>%
+#   select(starts_with("nettaxchargeable_"), starts_with("NPV_taxrevenue_")))
 
 
 
