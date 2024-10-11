@@ -250,6 +250,13 @@ write.csv(df, file.path(data_path, "tax_returns_post_opt.csv"), row.names = FALS
 
 # Define Genetic Algorithm ---------------------------------
 
+# Function to scale R and B based on income and alpha
+scale_R_B <- function(R, B, income, alpha, mean_income) {
+  R_scaled <- (income^alpha / mean_income^alpha) * R
+  B_scaled <- (mean_income^alpha / income^alpha) * B
+  return(list(R_scaled = R_scaled, B_scaled = B_scaled))
+}
+
 # Define the MVPF constraint
 mvpf_constraint <- function(W, R, B, C, MVPF_max) {
   numerator <- sum(W * (R + B))
@@ -329,7 +336,6 @@ initialize_population_valid_fast <- function(object, R, B, C, MVPF_max, Cost_max
   return(pop)
 }
 
-
 # Policy 2a: Revenue max, MVPF constraint, no cost constraint ------------------
 
 # Maximum allowable cost and MVPF
@@ -340,14 +346,7 @@ Cost_max <- NULL
 cost_constraint <- FALSE  
 
 # Define the list of concavity parameters to optimize on
-alpha_values <- c(0, 0.2, 0.5)
-
-# Function to scale R and B based on income and alpha
-scale_R_B <- function(R, B, income, alpha, mean_income) {
-  R_scaled <- (income^alpha / mean_income^alpha) * R
-  B_scaled <- (mean_income^alpha / income^alpha) * B
-  return(list(R_scaled = R_scaled, B_scaled = B_scaled))
-}
+alpha_values <- c(0, 0.2)
 
 # Calculate the mean income once
 mean_income <- mean(df$income)
@@ -367,7 +366,8 @@ for (alpha in alpha_values) {
   # Run the GA with the scaled R and B values
   ga_result <- ga(
     type = "binary",
-    fitness = function(W) evaluation_function(W, R_scaled, B_scaled, df$C, MVPF_max, Cost_max, cost_constraint),
+    fitness = function(W) evaluation_function(W, R_scaled, B_scaled, df$C, MVPF_max, 
+                                              Cost_max, cost_constraint),
     nBits = nrow(df),   # Number of bits equal to number of individuals
     popSize = 100,      # Population size
     maxiter = 1000,     # Maximum number of generations
@@ -398,7 +398,7 @@ for (alpha in alpha_values) {
   cat("Total cost of the optimal policy for alpha =", alpha, ":", total_cost, "\n")
   
   # Save the optimal allocation to the original dataframe
-  column_name <- paste0("opt_2a_a", gsub("\\.", "", as.character(alpha)))
+  column_name <- paste0("W_opt_2a_", gsub("\\.", "", as.character(alpha)))
   final_W_df <- data.frame(t(final_W))
   names(final_W_df) <- column_name
   df[[column_name]] <- final_W_df[[column_name]]
@@ -444,6 +444,7 @@ for (alpha in alpha_values) {
   
 }
 
+write.csv(df, file.path(data_path, "tax_returns_post_opt.csv"), row.names = FALSE)
 
 
 # Policy 2b: Revenue max, MVPF and cost constraints -----------------------
@@ -456,14 +457,7 @@ Cost_max <- 200
 cost_constraint <- TRUE  
 
 # Define the list of concavity parameters to optimize on
-alpha_values <- c(0, 0.2, 0.5)
-
-# Function to scale R and B based on income and alpha
-scale_R_B <- function(R, B, income, alpha, mean_income) {
-  R_scaled <- (income^alpha / mean_income^alpha) * R
-  B_scaled <- (mean_income^alpha / income^alpha) * B
-  return(list(R_scaled = R_scaled, B_scaled = B_scaled))
-}
+alpha_values <- c(0, 0.2)
 
 # Calculate the mean income once
 mean_income <- mean(df$income)
@@ -514,7 +508,7 @@ for (alpha in alpha_values) {
   cat("Total cost of the optimal policy for alpha =", alpha, ":", total_cost, "\n")
   
   # Save the optimal allocation to the original dataframe
-  column_name <- paste0("opt_2a_a", gsub("\\.", "", as.character(alpha)))
+  column_name <- paste0("W_opt_2b_", gsub("\\.", "", as.character(alpha)))
   final_W_df <- data.frame(t(final_W))
   names(final_W_df) <- column_name
   df[[column_name]] <- final_W_df[[column_name]]
@@ -560,7 +554,7 @@ for (alpha in alpha_values) {
   
 }
 
-
+write.csv(df, file.path(data_path, "tax_returns_post_opt.csv"), row.names = FALSE)
 
 
 
