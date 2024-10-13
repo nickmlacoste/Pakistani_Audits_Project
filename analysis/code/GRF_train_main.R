@@ -314,15 +314,17 @@ cate_hats_2018 <- as.data.frame(
   )$predictions)
 colnames(cate_hats_2018) <- c("NPV_revenue_cate", "audit_cost_cate", "burden_cate")
 
-rate <- rank_average_treatment_effect(cf_model_eval, cate_hats_test)
+rate <- rank_average_treatment_effect(cf_model_eval, 
+                                      cate_hats_test,
+                                      target = "AUTOC")
 rate
 
-plot <- plot(rate, xlab = "Treated Fraction", 
+png(file.path(figures_output_path, "rate_revenue.png"))
+plot(rate, xlab = "Treated Fraction", 
      main = "TOC evaluated on hold-out\n tau(X) estimated from test forest",
      ylab = "ATE Gain")
+dev.off()
 
-ggsave(filename = file.path(figures_output_path, "rate_revenue.png"), plot = plot, 
-       width = 8, height = 6, dpi = 300)
 
 
 
