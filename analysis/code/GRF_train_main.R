@@ -70,7 +70,7 @@ for (year in target_years) {
   cat("Created dataset:", df_name, "\n")
 }
 
-# Estimate multi-arm causal forest --------------------------
+# Estimate full multi-arm causal forest --------------------------
 
 X_covariates <- c("taxableinc_b3", "taxableinc_b2", "taxableinc_b1", "taxableinc_current",
                   "incfrsalary_b3", "incfrsalary_b2", "incfrsalary_b1", "incfrsalary_current")
@@ -93,7 +93,7 @@ X_matrix_train <- as.matrix(tax_returns_df_17[, X_covariates])
 Y_matrix_train <- as.matrix(tax_returns_df_17[, c("NPV_taxrevenue_current", 
                                                   "audit_cost_current", 
                                                   "burden_current")])
-W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current))
+W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current)) #is the factor() function necessary here?
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
@@ -102,29 +102,93 @@ train_2017_model <- FALSE # 2017 data is from 2016 tax returns
 if (train_2017_model) {
   
   # Estimate the causal forest model
-  cf_model_17 <- multi_arm_causal_forest(X = X_matrix_train,
-                                         Y = Y_matrix_train,
-                                         W = W_vector_train,
-                                         Y.hat = NULL,
-                                         W.hat = NULL,
-                                         num.trees = 1000,
-                                         honesty = TRUE,
-                                         honesty.fraction = 0.5,
-                                         honesty.prune.leaves = TRUE,
-                                         alpha = 0.05,
-                                         imbalance.penalty = 0,
-                                         stabilize.splits = TRUE,
-                                         min.node.size = 5
-                                         )
+  cf_model_full_17 <- multi_arm_causal_forest(X = X_matrix_train,
+                                              Y = Y_matrix_train,
+                                              W = W_vector_train,
+                                              Y.hat = NULL,
+                                              W.hat = NULL,
+                                              num.trees = 1000,
+                                              honesty = TRUE,
+                                              honesty.fraction = 0.5,
+                                              honesty.prune.leaves = TRUE,
+                                              alpha = 0.05,
+                                              imbalance.penalty = 0,
+                                              stabilize.splits = TRUE,
+                                              min.node.size = 5
+                                              )
                            
   
   # Save the causal forest model
-  saveRDS(cf_model_17, file = paste0(cf_output_path, "/cf_model_trained_2017.rda"))
+  saveRDS(cf_model_full_17, file = paste0(cf_output_path, "/cf_model_full_trained_2017.rda"))
   
 } else {
   
   # Load the previously saved model
-  cf_model_17 <- readRDS(file.path(cf_output_path, "cf_model_trained_2017.rda"))
+  cf_model_full_17 <- readRDS(file.path(cf_output_path, "cf_model_full_trained_2017.rda"))
+}
+
+# Estimate evaluation forests for prediction quality tests -----------------------------
+
+X_covariates <- c("taxableinc_b3", "taxableinc_b2", "taxableinc_b1", "taxableinc_current",
+                  "incfrsalary_b3", "incfrsalary_b2", "incfrsalary_b1", "incfrsalary_current")
+
+# need to define the training objects as matrices/vectors
+X_matrix_train <- as.matrix(tax_returns_df_17[, X_covariates])
+# only using revenue for RATE because multi-outcomes don't work
+Y_matrix_train <- as.vector(tax_returns_df_17$NPV_taxrevenue_current)
+W_vector_train <- as.vector(tax_returns_df_17$audited_current)
+
+
+# Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
+train_2017_test_models <- TRUE # 2017 data is from 2016 tax returns
+
+if (train_2017_test_models) {
+  
+  n <- nrow(X_matrix_train)
+  train <- sample(1:n, n * 0.7) # training on 70% of the data
+  test <- setdiff(1:n, train) # evaluate on remaining 30%
+  
+  # Estimate the causal forest test and evaluation models
+  cf_model_test <- causal_forest(X = X_matrix_train[train, ],
+                                 Y = Y_matrix_train[train],
+                                 W = W_vector_train[train],
+                                 Y.hat = NULL,
+                                 W.hat = NULL,
+                                 num.trees = 1000,
+                                 honesty = TRUE,
+                                 honesty.fraction = 0.5,
+                                 honesty.prune.leaves = TRUE,
+                                 alpha = 0.05,
+                                 imbalance.penalty = 0,
+                                 stabilize.splits = TRUE,
+                                 min.node.size = 5
+                                 )
+  
+  cf_model_eval <- causal_forest(X = X_matrix_train[test, ],
+                                 Y = Y_matrix_train[test],
+                                 W = W_vector_train[test],
+                                 Y.hat = NULL,
+                                 W.hat = NULL,
+                                 num.trees = 1000,
+                                 honesty = TRUE,
+                                 honesty.fraction = 0.5,
+                                 honesty.prune.leaves = TRUE,
+                                 alpha = 0.05,
+                                 imbalance.penalty = 0,
+                                 stabilize.splits = TRUE,
+                                 min.node.size = 5
+                                 )
+  
+  
+  # Save the causal forest models
+  saveRDS(cf_model_test, file = paste0(cf_output_path, "/cf_model_test.rda"))
+  saveRDS(cf_model_eval, file = paste0(cf_output_path, "/cf_model_evaluation.rda"))
+  
+} else {
+  
+  # Load the previously saved models
+  cf_model_test <- readRDS(file.path(cf_output_path, "cf_model_test.rda"))
+  cf_model_eval <- readRDS(file.path(cf_output_path, "cf_model_eval.rda"))
 }
 
 
@@ -133,7 +197,7 @@ if (train_2017_model) {
 #I'm also generating predictions for in-sample data using leave-one-out estimates
 cate_hats_2017 <- as.data.frame(
   predict(
-    object = cf_model_17,
+    object = cf_model_full_17,
     newdata = NULL,
     drop = TRUE,
     estimate.variance = FALSE
@@ -143,7 +207,7 @@ colnames(cate_hats_2017) <- c("NPV_revenue_cate", "audit_cost_cate", "burden_cat
 #these are the out-of-bag predictions used for policy derivation
 cate_hats_2018 <- as.data.frame(
   predict(
-    object = cf_model_17,
+    object = cf_model_full_17,
     newdata = tax_returns_df_18[, X_covariates],
     drop = TRUE, # removes the unnecessary dimension for multiple treat arms
     estimate.variance = FALSE
@@ -162,7 +226,7 @@ tax_returns_df_18 <- left_join(tax_returns_df_18, cate_hats_2018, by = "index")
 
 # Distributions of treatment effects --------------------------
 
-ATEs <- average_treatment_effect(cf_model_17)
+ATEs <- average_treatment_effect(cf_model_full_17)
 
 # distribution of NPV revenue predictions:
 plot <- ggplot(cate_hats_2017, aes(x = NPV_revenue_cate)) +
@@ -207,11 +271,58 @@ ggsave(filename = file.path(figures_output_path, "cate_dist_B.png"), plot = plot
        width = 8, height = 6, dpi = 300)
 
 
+# VIF scores -------------------------------
 
+vif_scores <- variable_importance(cf_model_full_17)
+top_15_indices <- order(vif_scores, decreasing = TRUE)[1:15]
+top_15_scores <- vif_scores[top_15_indices]
 
+# Custom variable names for the top 15 variables (modify as needed)
+custom_names <- c("Var1", "Var2", "Var3", "Var4", "Var5", 
+                  "Var6", "Var7", "Var8", "Var9", "Var10", 
+                  "Var11", "Var12", "Var13", "Var14", "Var15")
 
+# Create a dataframe with the custom names and their corresponding VIF scores
+vif_df <- data.frame(Variable = custom_names, VIF_Score = top_15_scores)
 
+# Plot the variable importance as a horizontal bar chart
+plot <- ggplot(vif_df, aes(x = reorder(Variable, VIF_Score), y = VIF_Score)) +
+  geom_bar(stat = "identity", fill = "steelblue") +    
+  coord_flip() +                                       
+  labs(title = "Variable Importance (VIF Scores)", 
+       x = "Variable", 
+       y = "Variable Importance Score") +
+  theme_minimal()
 
+ggsave(filename = file.path(figures_output_path, "vif_scores.png"), plot = plot, 
+       width = 8, height = 6, dpi = 300)
+
+# Rank Average Treatment Effect ------------------------
+
+cate_hats_test <- predict(
+  object = cf_model_test, 
+  X_matrix_train[test, ],
+  drop = TRUE,
+  estimate.variance = FALSE)$predictions
+
+cate_hats_2018 <- as.data.frame(
+  predict(
+    object = cf_model_full_17,
+    newdata = tax_returns_df_18[, X_covariates],
+    drop = TRUE, # removes the unnecessary dimension for multiple treat arms
+    estimate.variance = FALSE
+  )$predictions)
+colnames(cate_hats_2018) <- c("NPV_revenue_cate", "audit_cost_cate", "burden_cate")
+
+rate <- rank_average_treatment_effect(cf_model_eval, cate_hats_test)
+rate
+
+plot <- plot(rate, xlab = "Treated Fraction", 
+     main = "TOC evaluated on hold-out\n tau(X) estimated from test forest",
+     ylab = "ATE Gain")
+
+ggsave(filename = file.path(figures_output_path, "rate_revenue.png"), plot = plot, 
+       width = 8, height = 6, dpi = 300)
 
 
 
