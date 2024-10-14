@@ -42,6 +42,12 @@ source(file.path("C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane
 
 cat("All Optimization Complete.\n")
 
+# Calls script to generate tables on figures on resulting policies -------------------------
+
+source(file.path("C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Pakistani_Audits_Project/analysis/code/Optimal_Policy_Analysis.R"))
+
+cat("Replication Complete.\n")
+
 
 
 
