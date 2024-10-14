@@ -14,9 +14,11 @@ library(grf)
 library(xtable)
 library(knitr)
 library(kableExtra)
+library(VennDiagram)
 
 data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
 output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Pakistani_Audits_Project/analysis/output/tables"
+figures_output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Pakistani_Audits_Project/analysis/output"
 
 # Import 2013-2021 tax returns 
 tax_returns_df <- read.csv(file.path(data_path, "tax_returns_post_opt.csv"))
@@ -163,6 +165,79 @@ combined_latex_table <- paste(latex_tables, collapse = "\n\n")
 
 # Save the LaTeX table
 writeLines(combined_latex_table, file.path(output_path, "Group_Covariate_Means_Table.tex"))
+
+# Create Venn Diagram for MVPFs of overlap policies ------------------------
+
+# Function to calculate MVPFs
+calculate_mvpfs <- function(df, W_col, audited_col) {
+  df_filtered <- df %>% filter(df[[audited_col]] == 1)
+  MVPF <- sum(df_filtered[[W_col]] * (df_filtered$R + df_filtered$B)) / sum(df_filtered[[W_col]] * (df_filtered$R - df_filtered$C))
+  return(MVPF)
+}
+
+# Function to calculate MVPF for the entire subset
+calculate_mvpfs_entire <- function(df, W_col) {
+  MVPF <- sum(df[[W_col]] * (df$R + df$B)) / sum(df[[W_col]] * (df$R - df$C))
+  return(MVPF)
+}
+
+# List of W_opt columns for each panel
+W_opt_cols <- grep("^W_opt_", colnames(tax_returns_df), value = TRUE)
+
+# Loop through each panel and create Venn diagrams
+for (panel in c("1a", "1b", "2a", "2b")) {
+  # Extract relevant columns for the panel
+  panel_cols <- grep(paste0("^W_opt_", panel), W_opt_cols, value = TRUE)
+  
+  for (col in panel_cols) {
+    alpha_val <- gsub(paste0("^W_opt_", panel, "_"), "", col)
+    
+    # Calculate MVPFs for each region
+    observed_mvpfs <- round(calculate_mvpfs(tax_returns_df, "audited_current", "audited_current"), 2)
+    optimal_mvpfs <- round(calculate_mvpfs(tax_returns_df, col, col), 2)
+    overlap_mvpfs <- round(calculate_mvpfs(tax_returns_df, col, "audited_current"), 2)
+    
+    # Make sure overlap does not exceed either area
+    overlap_mvpfs <- min(overlap_mvpfs, observed_mvpfs, optimal_mvpfs)
+    
+    # Calculate MVPFs for the entire subsets
+    observed_mvpfs_entire <- calculate_mvpfs_entire(tax_returns_df, "audited_current")
+    optimal_mvpfs_entire <- calculate_mvpfs_entire(tax_returns_df, col)
+    
+    # Create Venn diagram with larger font sizes for labels and numbers
+    venn.plot <- draw.pairwise.venn(
+      area1 = observed_mvpfs,
+      area2 = optimal_mvpfs,
+      cross.area = overlap_mvpfs,
+      category = c("Observed Policy", paste0("Optimal Policy")),
+      fill = c("blue", "red"),
+      alpha = 0.5,
+      cat.pos = c(-20, 20),
+      cat.dist = c(0.05, 0.05),
+      scaled = TRUE,
+      cat.cex = 2.5,  
+      cex = 2.5 
+    )
+    
+    # Save the Venn diagram
+    venn_file <- file.path(figures_output_path, paste0("Venn_Diagram_", panel, "_alpha_", alpha_val, ".png"))
+    
+    # Open the png device
+    png(venn_file, width = 800, height = 600)  # Adjust size as needed
+    
+    # Plot the Venn diagram
+    grid.draw(venn.plot)
+    
+    # Add MVPFs for the entire subsets above the circles (rounded to 2 decimal places, with larger font)
+    grid.text(paste("MVPF (Observed Policy):", round(observed_mvpfs_entire, 2)), 
+              x = 0.3, y = 0.9, gp = gpar(fontsize = 24, col = "blue"))  
+    grid.text(paste("MVPF (Optimal Policy):", round(optimal_mvpfs_entire, 2)), 
+              x = 0.7, y = 0.9, gp = gpar(fontsize = 24, col = "red"))  
+    
+    # Close the png device to save the file
+    dev.off()
+  }
+}
 
 
 
