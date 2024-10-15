@@ -116,8 +116,8 @@ prefix_selection <- list(
   foreigninc = FALSE,
   incfragriculture = FALSE,
   exemptincome = FALSE,
-  turnover = TRUE,
-  costofsales = TRUE,
+  turnover = FALSE,
+  costofsales = FALSE,
   grossprofitloss = TRUE,
   receipts64 = FALSE,
   fixfinaltax64 = FALSE,
@@ -179,13 +179,13 @@ prefix_selection <- list(
   unadjfrpryear5 = FALSE,
   unadjfrpryear6 = FALSE,
   totalassets = TRUE,
-  building = TRUE,
-  plantmachinery = TRUE,
+  building = FALSE,
+  plantmachinery = FALSE,
   capitalworkinprogress = FALSE,
   cashcasheq = FALSE,
   liabilities = TRUE,
   authorizedcapital3351 = FALSE,
-  paidupcapital = TRUE,
+  paidupcapital = FALSE,
   acprofittaxchar = FALSE,
   tottaxded6408 = FALSE,
   tottaxded6410 = FALSE,
@@ -220,7 +220,7 @@ W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current)) #is the f
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
-train_2017_model <- FALSE # 2017 data is from 2016 tax returns
+train_2017_model <- TRUE # 2017 data is from 2016 tax returns
 
 if (train_2017_model) {
   
@@ -252,9 +252,6 @@ if (train_2017_model) {
 
 # Estimate evaluation forests for prediction quality tests -----------------------------
 
-X_covariates <- c("taxableinc_b3", "taxableinc_b2", "taxableinc_b1", "taxableinc_current",
-                  "incfrsalary_b3", "incfrsalary_b2", "incfrsalary_b1", "incfrsalary_current")
-
 # need to define the training objects as matrices/vectors
 X_matrix_train <- as.matrix(tax_returns_df_17[, X_covariates])
 # only using revenue for RATE because multi-outcomes don't work
@@ -265,11 +262,11 @@ W_vector_train <- as.vector(tax_returns_df_17$audited_current)
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
 train_2017_test_models <- TRUE # 2017 data is from 2016 tax returns
 
+n <- nrow(X_matrix_train)
+train <- sample(1:n, n * 0.7) # training on 70% of the data
+test <- setdiff(1:n, train) # evaluate on remaining 30%
+
 if (train_2017_test_models) {
-  
-  n <- nrow(X_matrix_train)
-  train <- sample(1:n, n * 0.7) # training on 70% of the data
-  test <- setdiff(1:n, train) # evaluate on remaining 30%
   
   # Estimate the causal forest test and evaluation models
   cf_model_test <- causal_forest(X = X_matrix_train[train, ],
@@ -311,7 +308,7 @@ if (train_2017_test_models) {
   
   # Load the previously saved models
   cf_model_test <- readRDS(file.path(cf_output_path, "cf_model_test.rda"))
-  cf_model_eval <- readRDS(file.path(cf_output_path, "cf_model_eval.rda"))
+  cf_model_eval <- readRDS(file.path(cf_output_path, "cf_model_evaluation.rda"))
 }
 
 
@@ -440,12 +437,14 @@ colnames(cate_hats_2018) <- c("NPV_revenue_cate", "audit_cost_cate", "burden_cat
 rate <- rank_average_treatment_effect(cf_model_eval, 
                                       cate_hats_test,
                                       target = "AUTOC")
-rate
 
 png(file.path(figures_output_path, "rate_revenue.png"))
 plot(rate, xlab = "Treated Fraction", 
      main = "TOC evaluated on hold-out\n tau(X) estimated from test forest",
      ylab = "ATE Gain")
+text(x = 0.8, y = max(rate$estimate), 
+     labels = paste("AUTOC:", round(rate$estimate, 2)), 
+     pos = 4, cex = 1.2, col = "blue")
 dev.off()
 
 
