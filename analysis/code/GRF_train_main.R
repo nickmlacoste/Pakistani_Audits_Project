@@ -64,16 +64,139 @@ for (year in target_years) {
   # Assign the dataframe to the dynamically created name (e.g., tax_returns_df_17 for 2017)
   assign(df_name, renamed_df)
   
-  rm(renamed_df)
+  rm(renamed_df, selected_columns)
   
   # Print confirmation
   cat("Created dataset:", df_name, "\n")
 }
 
+# we dont need any of the _a1, _a2, _a3 columns exept for the NPV_taxrevenue ones
+tax_returns_df_17 <- tax_returns_df_17 %>%
+  select(-matches(".*_a1$|.*_a2$|.*_a3$"), 
+         matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^ntn$"))
+tax_returns_df_18 <- tax_returns_df_18 %>%
+  select(-matches(".*_a1$|.*_a2$|.*_a3$"), 
+         matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^ntn$"))
+
+
 # Estimate full multi-arm causal forest --------------------------
 
-X_covariates <- c("taxableinc_b3", "taxableinc_b2", "taxableinc_b1", "taxableinc_current",
-                  "incfrsalary_b3", "incfrsalary_b2", "incfrsalary_b1", "incfrsalary_current")
+# function for interactive covariate selection
+generate_column_names <- function(df, prefix_selection) {
+  all_columns <- colnames(df)
+  
+  # Generate patterns for the selected prefixes
+  include_patterns <- names(prefix_selection)[unlist(prefix_selection)]
+  exclude_patterns <- names(prefix_selection)[!unlist(prefix_selection)]
+  
+  include_regex <- paste0("^(", paste(include_patterns, collapse = "|"), ")_(current|b1|b2|b3)$")
+  exclude_regex <- paste0("^(", paste(exclude_patterns, collapse = "|"), ")_(current|b1|b2|b3)$")
+  
+  # Include columns with the selected prefixes
+  selected_columns <- all_columns[grepl(include_regex, all_columns)]
+  
+  # Exclude columns with the selected prefixes
+  if (length(exclude_patterns) > 0) {
+    selected_columns <- selected_columns[!grepl(exclude_regex, selected_columns)]
+  }
+  
+  return(selected_columns)
+}
+
+# List of prefixes: select TRUE if you wish to include, FALSE if not
+# note this will include all instances of *_b3, *_b2, *_b1, *_current in the X matrix
+prefix_selection <- list(
+  taxableinc = TRUE,
+  totinc = TRUE,
+  incfrsalary = TRUE,
+  incfrbusiness = FALSE,
+  incfrcapital = FALSE,
+  incfrproperty = FALSE,
+  incfrother = FALSE,
+  foreigninc = FALSE,
+  incfragriculture = FALSE,
+  exemptincome = FALSE,
+  turnover = TRUE,
+  costofsales = TRUE,
+  grossprofitloss = TRUE,
+  receipts64 = FALSE,
+  fixfinaltax64 = FALSE,
+  fixfinaltaxdeducted = FALSE,
+  accountingprofitloss3200 = FALSE,
+  nettaxchargeable = TRUE,
+  minimumtax = TRUE,
+  normalincometax = TRUE,
+  withholdingtax = FALSE,
+  fixfinaltax92 = FALSE,
+  advanceincometax = FALSE,
+  admittedtax9203 = FALSE,
+  demandedincometax = FALSE,
+  supertax = FALSE,
+  refund = FALSE,
+  exports = FALSE,
+  exports2 = FALSE,
+  us1531acola = FALSE,
+  us1531acolb = FALSE,
+  us1531acolc = FALSE,
+  us1531acola1 = FALSE,
+  us1531acolb1 = FALSE,
+  us1531acolc1 = FALSE,
+  us1531bcola = FALSE,
+  us1531bcolb = FALSE,
+  us1531bcolc = FALSE,
+  us1531bcola1 = FALSE,
+  us1531bcolb1 = FALSE,
+  us1531bcolc640001 = FALSE,
+  us148cola = FALSE,
+  us148colb = FALSE,
+  us148colc = FALSE,
+  us148cola1 = FALSE,
+  us148colb1 = FALSE,
+  us148colc1 = FALSE,
+  taxcrdit = FALSE,
+  agriincometax = FALSE,
+  netrevenue = TRUE,
+  grossrevenue = TRUE,
+  sellingexpenses = TRUE,
+  openingstock = FALSE,
+  imprawmaterial = FALSE,
+  netpurchases = FALSE,
+  netdompurchases = FALSE,
+  netimportrawmaterial3056 = FALSE,
+  consumed = FALSE,
+  domrawmaterial = FALSE,
+  imprawmaterial2 = FALSE,
+  directexpenses = FALSE,
+  salaries3071 = FALSE,
+  closingstock = FALSE,
+  masfees = FALSE,
+  salaries3154 = FALSE,
+  inclossfrbus = FALSE,
+  unadjfrpryear = FALSE,
+  unadjfrpryear2 = FALSE,
+  unadjfrpryear3 = FALSE,
+  unadjfrpryear4 = FALSE,
+  unadjfrpryear5 = FALSE,
+  unadjfrpryear6 = FALSE,
+  totalassets = TRUE,
+  building = TRUE,
+  plantmachinery = TRUE,
+  capitalworkinprogress = FALSE,
+  cashcasheq = FALSE,
+  liabilities = TRUE,
+  authorizedcapital3351 = FALSE,
+  paidupcapital = TRUE,
+  acprofittaxchar = FALSE,
+  tottaxded6408 = FALSE,
+  tottaxded6410 = FALSE,
+  resident = FALSE,
+  docdate = FALSE,
+  sr = FALSE,
+  days_late = TRUE
+)
+
+# Generate the list of column names to include
+X_covariates <- generate_column_names(tax_returns_df_17, prefix_selection)
 
 # remove rows with missing data for Y or W
 tax_returns_df_17 <- tax_returns_df_17 %>%
