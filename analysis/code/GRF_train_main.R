@@ -70,11 +70,14 @@ for (year in target_years) {
   cat("Created dataset:", df_name, "\n")
 }
 
-# we dont need any of the _a1, _a2, _a3 columns exept for the NPV_taxrevenue ones
+# filtration operations: remove those treated after the current year for training and testing,
+# then remove all _a1, _a2, _a3 variables (except revenue) as they are not needed for anything
 tax_returns_df_17 <- tax_returns_df_17 %>%
+  filter(!(audited_a1 == 1 | audited_a2 == 1 | audited_a3 == 1)) %>%
   select(-matches(".*_a1$|.*_a2$|.*_a3$"), 
          matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^ntn$"))
 tax_returns_df_18 <- tax_returns_df_18 %>%
+  filter(!(audited_a1 == 1 | audited_a2 == 1 | audited_a3 == 1)) %>%
   select(-matches(".*_a1$|.*_a2$|.*_a3$"), 
          matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^ntn$"))
 
@@ -89,6 +92,14 @@ generate_column_names <- function(df, prefix_selection) {
   include_patterns <- names(prefix_selection)[unlist(prefix_selection)]
   exclude_patterns <- names(prefix_selection)[!unlist(prefix_selection)]
   
+  # Special handling for 'audited' prefix
+  if ("audited" %in% include_patterns) {
+    include_patterns <- setdiff(include_patterns, "audited")
+    audited_columns <- grep("^audited_(b1|b2|b3)$", all_columns, value = TRUE)
+  } else {
+    audited_columns <- character(0)
+  }
+  
   include_regex <- paste0("^(", paste(include_patterns, collapse = "|"), ")_(current|b1|b2|b3)$")
   exclude_regex <- paste0("^(", paste(exclude_patterns, collapse = "|"), ")_(current|b1|b2|b3)$")
   
@@ -99,6 +110,9 @@ generate_column_names <- function(df, prefix_selection) {
   if (length(exclude_patterns) > 0) {
     selected_columns <- selected_columns[!grepl(exclude_regex, selected_columns)]
   }
+  
+  # Add the special 'audited' columns
+  selected_columns <- c(selected_columns, audited_columns)
   
   return(selected_columns)
 }
@@ -192,7 +206,8 @@ prefix_selection <- list(
   resident = FALSE,
   docdate = FALSE,
   sr = FALSE,
-  days_late = TRUE
+  days_late = TRUE,
+  audited = TRUE
 )
 
 # Generate the list of column names to include
@@ -220,7 +235,7 @@ W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current)) #is the f
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
-train_2017_model <- TRUE # 2017 data is from 2016 tax returns
+train_2017_model <- FALSE # 2017 data is from 2016 tax returns
 
 if (train_2017_model) {
   
@@ -260,7 +275,7 @@ W_vector_train <- as.vector(tax_returns_df_17$audited_current)
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
-train_2017_test_models <- TRUE # 2017 data is from 2016 tax returns
+train_2017_test_models <- FALSE # 2017 data is from 2016 tax returns
 
 n <- nrow(X_matrix_train)
 train <- sample(1:n, n * 0.7) # training on 70% of the data
