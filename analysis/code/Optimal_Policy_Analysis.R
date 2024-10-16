@@ -11,7 +11,6 @@ rm(list = ls())
 library(tidyverse)
 library(haven)
 library(grf)
-library(xtable)
 library(knitr)
 library(kableExtra)
 library(VennDiagram)
@@ -72,13 +71,22 @@ captions <- list(
   "2b" = "Policy 2b: Revenue Maximization with MVPF and Cost Constraint"
 )
 
+# Define labels for each panel
+labels <- list(
+  "1a" = "optimal_vs_observed_policy_1a",
+  "1b" = "optimal_vs_observed_policy_1b",
+  "2a" = "optimal_vs_observed_policy_2a",
+  "2b" = "optimal_vs_observed_policy_2b"
+)
+
 # Create LaTeX tables for each panel
 latex_tables <- list()
 
 for (panel in c("1a", "1b", "2a", "2b")) {
   panel_table <- kable(results_list[[panel]], 
                        caption = captions[[panel]], 
-                       format = "latex", booktabs = TRUE, row.names = FALSE) %>%
+                       format = "latex", booktabs = TRUE, row.names = FALSE,
+                       label = labels[[panel]]) %>%
     kable_styling(latex_options = c("striped", "scale_down", "HOLD_position")) %>%
     add_header_above(c(" " = 1, "Redistribution Preferences" = length(results_list[[panel]]) - 1))
   
@@ -147,13 +155,22 @@ captions <- list(
   "2b" = "Policy 2b: Group Covariate Means"
 )
 
+# Define labels for each panel
+labels <- list(
+  "1a" = "cov_means_policy_1a",
+  "1b" = "cov_means_policy_1b",
+  "2a" = "cov_means_policy_2a",
+  "2b" = "cov_means_policy_2b"
+)
+
 # Create LaTeX tables for each panel
 latex_tables <- list()
 
 for (panel in c("1a", "1b", "2a", "2b")) {
   panel_table <- kable(results_list[[panel]], 
                        caption = captions[[panel]], 
-                       format = "latex", booktabs = TRUE, row.names = FALSE) %>%
+                       format = "latex", booktabs = TRUE, row.names = FALSE, 
+                       label = labels[[panel]]) %>%
     kable_styling(latex_options = c("striped", "scale_down", "HOLD_position")) %>%
     add_header_above(c(" " = 1, "Observed Policy" = 1, "Optimal Policy - Observed Policy" = length(panel_cols)))
   

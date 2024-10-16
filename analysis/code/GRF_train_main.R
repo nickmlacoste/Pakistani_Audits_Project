@@ -10,7 +10,8 @@ rm(list = ls())
 library(tidyverse)
 library(haven)
 library(grf)
-library(xtable)
+library(knitr)
+library(kableExtra)
 
 data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
 figures_output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Pakistani_Audits_Project/analysis/output"
@@ -357,6 +358,93 @@ tax_returns_df_18 <- tax_returns_df_18 %>%
 cate_hats_2018 <- cate_hats_2018 %>%
   mutate(index = row_number())
 tax_returns_df_18 <- left_join(tax_returns_df_18, cate_hats_2018, by = "index")
+
+# Table for GRF predictions of MVPF from observed policy (vs. actual MVPF) -------------------
+
+# Function to calculate MVPF
+calculate_mvpfs <- function(df, R_col, C_col, B_col, W_col) {
+  df_filtered <- df %>% filter(df[[W_col]] == 1)
+  MVPF <- sum(df_filtered[[W_col]] * (df_filtered[[R_col]] + df_filtered[[B_col]])) / 
+    sum(df_filtered[[W_col]] * (df_filtered[[R_col]] - df_filtered[[C_col]]))
+  sum_revenue <- sum(df_filtered[[R_col]])
+  sum_cost <- sum(df_filtered[[C_col]])
+  sum_burden <- sum(df_filtered[[B_col]])
+  return(list(MVPF = round(MVPF, 2), 
+              sum_revenue = round(sum_revenue, 2),
+              sum_cost = round(sum_cost,2),
+              sum_burden = round(sum_burden,2)))
+}
+
+# Function to perform t-test and return significance stars
+get_significance_stars <- function(p_value) {
+  if (p_value < 0.01) {
+    return("***")
+  } else if (p_value < 0.05) {
+    return("**")
+  } else if (p_value < 0.1) {
+    return("*")
+  } else {
+    return("")
+  }
+}
+
+# Calculate observed values
+observed_values <- calculate_mvpfs(tax_returns_df_18, 
+                                   R_col = "NPV_taxrevenue_current", 
+                                   C_col = "audit_cost_current", 
+                                   B_col = "burden_current", 
+                                   W_col = "audited_current")
+
+# Calculate predicted values
+predicted_values <- calculate_mvpfs(tax_returns_df_18, 
+                                    R_col = "NPV_revenue_cate", 
+                                    C_col = "audit_cost_cate", 
+                                    B_col = "burden_cate", 
+                                    W_col = "audited_current")
+
+# Calculate differences and perform t-tests
+differences <- c(
+  predicted_values$MVPF - observed_values$MVPF,
+  predicted_values$sum_revenue - observed_values$sum_revenue,
+  predicted_values$sum_cost - observed_values$sum_cost,
+  predicted_values$sum_burden - observed_values$sum_burden
+)
+
+# Perform t-tests (assuming paired t-test for simplicity)
+t_tests <- list(
+  t.test(tax_returns_df_18$NPV_revenue_cate[tax_returns_df_18$audited_current == 1], 
+         tax_returns_df_18$NPV_taxrevenue_current[tax_returns_df_18$audited_current == 1], paired = TRUE),
+  t.test(tax_returns_df_18$NPV_revenue_cate[tax_returns_df_18$audited_current == 1], 
+         tax_returns_df_18$NPV_taxrevenue_current[tax_returns_df_18$audited_current == 1], paired = TRUE),
+  t.test(tax_returns_df_18$audit_cost_cate[tax_returns_df_18$audited_current == 1], 
+         tax_returns_df_18$audit_cost_current[tax_returns_df_18$audited_current == 1], paired = TRUE),
+  t.test(tax_returns_df_18$burden_cate[tax_returns_df_18$audited_current == 1], 
+         tax_returns_df_18$burden_current[tax_returns_df_18$audited_current == 1], paired = TRUE)
+)
+
+# Extract p-values from t-tests
+p_values <- sapply(t_tests, function(test) round(test$p.value, 2))
+
+# Create a data frame for the table
+results_df <- data.frame(
+  Metric = c("MVPF", "Sum of Revenue", "Sum of Cost", "Sum of Burden"),
+  Observed = c(observed_values$MVPF, observed_values$sum_revenue, observed_values$sum_cost, observed_values$sum_burden),
+  `GRF Predicted` = c(predicted_values$MVPF, predicted_values$sum_revenue, predicted_values$sum_cost, predicted_values$sum_burden),
+  Difference = differences,
+  `p-value` = p_values
+)
+
+# Create the LaTeX table
+latex_table <- kable(results_df, 
+                     caption = "Comparison of Observed and GRF Predicted Values", 
+                     format = "latex", booktabs = TRUE, row.names = FALSE,
+                     label = "grf_predict_observed") %>%
+  kable_styling(latex_options = c("striped", "scale_down", "HOLD_position"))
+
+
+# Save the LaTeX table
+writeLines(latex_table, file.path(figures_output_path, 
+                                  "/tables/GRF_predict_MVPF_observed.tex"))
 
 
 # Distributions of treatment effects --------------------------
