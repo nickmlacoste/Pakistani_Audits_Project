@@ -24,17 +24,38 @@ output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane U
 
 # write.csv(tax_returns_df, file.path(data_path, "tax_returns_test_data.csv"), row.names = FALSE)
 
-tax_returns_df <- read.csv(file.path(output_path, "tax_returns_test_data.csv"))
+#tax_returns_df <- read.csv(file.path(output_path, "tax_returns_test_data.csv"))
+tax_returns_df <- read_dta(file.path(output_path, "tax_returns_test_data.dta"))
 
 # Creating derived columns that need to be created before pivoting -------------------------
 
+# Convert all columns that look like numbers to numeric
+non_convert_cols <- c("tid", "audit_income", "audit_tax", "audited", "duedate",
+                      "sentdate", "documentdate", "taxpayertype", "residentstatus",
+                      "ty", "subject", "medium")
+tax_returns_df <- tax_returns_df %>%
+  mutate(across(
+    .cols = -any_of(non_convert_cols),  # Apply to all columns except the excluded ones
+    .fns = ~ as.numeric(gsub(",", "", gsub("^\\s+", "", .)))  # Remove spaces and commas, then convert to numeric
+  ))
+
+
 tax_returns_df <- tax_returns_df %>%
   mutate(
-    duedate = as.Date(duedate),
-    filingdate = as.Date(filingdate),
-    days_late = as.numeric(filingdate - duedate)
+    audited = if_else(is.na(audited), 0, audited),
+    duedate = as.Date(duedate, format = "%d-%b-%y"),
+    sentdate = as.Date(sentdate, format = "%d-%b-%y"),
+    days_late = as.numeric(sentdate - duedate),
+    totalincomeassessed = if_else(audited == 0, 0, 
+                                  if_else(is.na(totalincomeassessed), 0, totalincomeassessed)),
+    audit_income = if_else(audited == 0, 0, 
+                           if_else(is.na(audit_income), 0, audit_income)),
+    demandedincometax = if_else(audited == 0, 0, 
+                                if_else(is.na(demandedincometax), 0, demandedincometax)),
+    audit_tax = if_else(audited == 0, 0, if_else(is.na(audit_tax), 0, audit_tax))
   ) %>%
-  select(-individual)
+  rename(year = ty) %>%
+  select(-c(taxpayertype, subject, `_merge`)) # enter any unused columns
 
 #view any derived columns
 tax_returns_df %>% pull(days_late)
@@ -45,12 +66,20 @@ tax_returns_df %>% pull(days_late)
 
 tax_returns_df <- tax_returns_df %>%
   pivot_wider(
-    id_cols = ntn,                      # create 1 row per taxpayer id
+    id_cols = tid,                      # create 1 row per taxpayer id
     names_from = year,                   # Pivot columns based on 'year'
-    values_from = -c(ntn, year),          # Pivot all columns other than ID and year
+    values_from = -c(tid, year),          # Pivot all columns other than ID and year
     names_sep = "_",                     # Separator for new column names
     names_glue = "{.value}_{year}"        # Format new column names as variable_year
   )
+
+# drop rows where nettaxchargeable_year is missing for any of 2017-2021: 
+# this indicates the taxpayer didn't file a return in that year. Missing values are predictors
+# for 2012-2016, but a problem in 2017-2021 because imputing 0 understates their NPV
+tax_returns_df <- tax_returns_df %>%
+  filter(!if_any(all_of(paste0("nettaxchargeable9200_", 2017:2021)), is.na))
+
+#View(tax_returns_df %>% select(starts_with("nettaxchargeable9200_")))
 
 
 # Create NPV of tax revenue for a given year -------------------------
@@ -61,13 +90,16 @@ calculate_npv <- function(df, year) {
   
   for (i in 0:3) {
     future_year <- year + i
-    column_name <- paste0("nettaxchargeable_", future_year)
+    nettax_column <- paste0("nettaxchargeable9200_", future_year)
+    audit_tax_column <- paste0("audit_tax_", future_year)
     
-    # Replace NA with 0
-    value <- ifelse(is.na(df[[column_name]]), 0, df[[column_name]])
+    # Replace NA with 0 for both nettaxchargeable and audit_tax
+    nettax_value <- ifelse(is.na(df[[nettax_column]]), 0, df[[nettax_column]])
+    audit_tax_value <- ifelse(is.na(df[[audit_tax_column]]), 0, df[[audit_tax_column]])
     
-    # Calculate discounted value and add to NPV
-    npv <- npv + value / ((1 + discount_rate)^i)
+    # Add nettax and audit_tax, calculate discounted value, and add to NPV
+    total_value <- nettax_value + audit_tax_value
+    npv <- npv + total_value / ((1 + discount_rate)^i)
   }
   
   return(round(npv, 2))
@@ -80,24 +112,7 @@ for (year in years) {
   tax_returns_df[[npv_column_name]] <- map_dbl(1:nrow(tax_returns_df), ~ calculate_npv(tax_returns_df[., ], year))
 }
 
-# View(tax_returns_df %>%
-#   select(starts_with("nettaxchargeable_"), starts_with("NPV_taxrevenue_")))
-
-
-
-# Generate an "audited indicator" (TEMPORARY) --------------------------
-
-# here I randomly assign each person a 10% chance of being audited each year
-generate_audited_indicator <- function(n) {
-  return(ifelse(runif(n) < 0.1, 1, 0))
-}
-
-# Apply the function to each year and create new columns
-years <- 2013:2021
-for (year in years) {
-  audited_column_name <- paste0("audited_", year)
-  tax_returns_df[[audited_column_name]] <- generate_audited_indicator(nrow(tax_returns_df))
-}
+#View(tax_returns_df %>% select(starts_with("nettaxchargeable9200_"), starts_with("NPV_taxrevenue_")))
 
 
 # Calculate taxpayer burden (UPDATE THIS WHEN YOU GET BURDEN SURVEY DATA) -------------------------
