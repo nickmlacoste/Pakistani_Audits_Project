@@ -1,7 +1,7 @@
 # Intro -----------------------------
 
 "
-This script performs final data cleaning before ML exercises can be performed
+This script performs final data cleaning before ML exercises can be performed.
 "
 
 rm(list = ls())
@@ -33,11 +33,13 @@ tax_returns_df <- read_dta(file.path(output_path, "tax_returns_test_data.dta"))
 non_convert_cols <- c("tid", "audit_income", "audit_tax", "audited", "duedate",
                       "sentdate", "documentdate", "taxpayertype", "residentstatus",
                       "ty", "subject", "medium")
-tax_returns_df <- tax_returns_df %>%
+tax_returns_df <- suppressWarnings(
+  tax_returns_df %>%
   mutate(across(
     .cols = -any_of(non_convert_cols),  # Apply to all columns except the excluded ones
     .fns = ~ as.numeric(gsub(",", "", gsub("^\\s+", "", .)))  # Remove spaces and commas, then convert to numeric
   ))
+)
 
 
 tax_returns_df <- tax_returns_df %>%
@@ -84,22 +86,32 @@ tax_returns_df <- tax_returns_df %>%
 
 # Create NPV of tax revenue for a given year -------------------------
 
-calculate_npv <- function(df, year) {
+calculate_npv_taxrevenue <- function(df, base_year) {
   discount_rate <- 0.03
   npv <- 0
   
-  for (i in 0:3) {
-    future_year <- year + i
-    nettax_column <- paste0("nettaxchargeable9200_", future_year)
-    audit_tax_column <- paste0("audit_tax_", future_year)
+  # Direct impact: audit_tax in the base year
+  audit_tax_column <- paste0("audit_tax_", base_year)
+  audit_tax_value <- ifelse(is.na(df[[audit_tax_column]]), 0, df[[audit_tax_column]])
+  
+  # Initialize NPV with the audit_tax for the base year
+  npv <- npv + audit_tax_value
+  
+  # Base year nettaxchargeable value
+  base_nettax_column <- paste0("nettaxchargeable9200_", base_year)
+  base_nettax_value <- ifelse(is.na(df[[base_nettax_column]]), 0, df[[base_nettax_column]])
+  
+  # Calculate the deterrence effect over the next 3 years (relative to the base year)
+  for (i in 1:3) {
+    future_year <- base_year + i
+    future_nettax_column <- paste0("nettaxchargeable9200_", future_year)
     
-    # Replace NA with 0 for both nettaxchargeable and audit_tax
-    nettax_value <- ifelse(is.na(df[[nettax_column]]), 0, df[[nettax_column]])
-    audit_tax_value <- ifelse(is.na(df[[audit_tax_column]]), 0, df[[audit_tax_column]])
+    # Calculate declared_tax_change (difference between future year and base year)
+    declared_tax_change <- ifelse(is.na(df[[future_nettax_column]]), 0, df[[future_nettax_column]]) -
+      base_nettax_value
     
-    # Add nettax and audit_tax, calculate discounted value, and add to NPV
-    total_value <- nettax_value + audit_tax_value
-    npv <- npv + total_value / ((1 + discount_rate)^i)
+    # Discount the declared_tax_change and add it to the NPV
+    npv <- npv + (declared_tax_change / ((1 + discount_rate)^i))
   }
   
   return(round(npv, 2))
@@ -109,8 +121,9 @@ calculate_npv <- function(df, year) {
 years <- 2017:2018
 for (year in years) {
   npv_column_name <- paste0("NPV_taxrevenue_", year)
-  tax_returns_df[[npv_column_name]] <- map_dbl(1:nrow(tax_returns_df), ~ calculate_npv(tax_returns_df[., ], year))
+  tax_returns_df[[npv_column_name]] <- map_dbl(1:nrow(tax_returns_df), ~ calculate_npv_taxrevenue(tax_returns_df[., ], year))
 }
+
 
 #View(tax_returns_df %>% select(starts_with("nettaxchargeable9200_"), starts_with("NPV_taxrevenue_")))
 
@@ -120,7 +133,7 @@ for (year in years) {
 # Function to calculate burden for a given year
 calculate_burden <- function(df, year) {
   audited_column <- paste0("audited_", year)
-  income_column <- paste0("taxableinc_", year)
+  income_column <- paste0("taxableincome9100_", year)
   burden_column <- paste0("burden_", year)
   
   # Calculate average taxable income for the year
@@ -155,7 +168,7 @@ for (year in years) {
 # Function to calculate audit cost for a given year
 calculate_audit_cost <- function(df, year) {
   audited_column <- paste0("audited_", year)
-  income_column <- paste0("taxableinc_", year)
+  income_column <- paste0("taxableincome9100_", year)
   audit_cost_column <- paste0("audit_cost_", year)
   
   # Rank the taxable income for the year

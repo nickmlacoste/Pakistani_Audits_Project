@@ -39,10 +39,10 @@ for (year in target_years) {
   # Create the dataframe name dynamically (e.g., tax_returns_df_17 for 2017)
   df_name <- paste0("tax_returns_df_", substr(year, 3, 4))
   
-  # Select columns that include the current year, the 3 years before, and the 3 years after, always keep 'ntn'
+  # Select columns that include the current year, the 3 years before, and the 3 years after, always keep 'tid'
   selected_columns <- tax_returns_df %>%
     select(
-      ntn,
+      tid,
       ends_with(as.character(year_b3)), 
       ends_with(as.character(year_b2)),
       ends_with(as.character(year_b1)),
@@ -76,11 +76,11 @@ for (year in target_years) {
 tax_returns_df_17 <- tax_returns_df_17 %>%
   filter(!(audited_a1 == 1 | audited_a2 == 1 | audited_a3 == 1)) %>%
   select(-matches(".*_a1$|.*_a2$|.*_a3$"), 
-         matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^ntn$"))
+         matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^tid$"))
 tax_returns_df_18 <- tax_returns_df_18 %>%
   filter(!(audited_a1 == 1 | audited_a2 == 1 | audited_a3 == 1)) %>%
   select(-matches(".*_a1$|.*_a2$|.*_a3$"), 
-         matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^ntn$"))
+         matches("NPV_taxrevenue_a1$|NPV_taxrevenue_a2$|NPV_taxrevenue_a3$|^tid$"))
 
 
 # Estimate full multi-arm causal forest --------------------------
@@ -93,10 +93,13 @@ generate_column_names <- function(df, prefix_selection) {
   include_patterns <- names(prefix_selection)[unlist(prefix_selection)]
   exclude_patterns <- names(prefix_selection)[!unlist(prefix_selection)]
   
-  # Special handling for 'audited' prefix
-  if ("audited" %in% include_patterns) {
-    include_patterns <- setdiff(include_patterns, "audited")
-    audited_columns <- grep("^audited_(b1|b2|b3)$", all_columns, value = TRUE)
+  # Omit _current if 'audited', 'audit_tax', and 'audit_income' prefixes are selected
+  if (any(c("audited", "audit_tax", "audit_income") %in% include_patterns)) {
+    # Remove the prefixes from 'include_patterns'
+    include_patterns <- setdiff(include_patterns, c("audited", "audit_tax", "audit_income"))
+    
+    # Select columns with '_b1', '_b2', or '_b3' for 'audited', 'audit_tax', and 'audit_income'
+    audited_columns <- grep("^(audited|audit_tax|audit_income)_(b1|b2|b3)$", all_columns, value = TRUE)
   } else {
     audited_columns <- character(0)
   }
@@ -121,95 +124,94 @@ generate_column_names <- function(df, prefix_selection) {
 # List of prefixes: select TRUE if you wish to include, FALSE if not
 # note this will include all instances of *_b3, *_b2, *_b1, *_current in the X matrix
 prefix_selection <- list(
-  taxableinc = TRUE,
-  totinc = TRUE,
-  incfrsalary = TRUE,
-  incfrbusiness = FALSE,
-  incfrcapital = FALSE,
-  incfrproperty = FALSE,
-  incfrother = FALSE,
-  foreigninc = FALSE,
-  incfragriculture = FALSE,
+  residentstatus = FALSE,
+  sentdate = FALSE,
+  documentdate = FALSE,
+  duedate = FALSE,
+  medium = FALSE,
+  receiptvalues640001 = FALSE,
+  fixfinaltax640001 = FALSE,
+  fixfinaltaxdeducted640001 = FALSE,
+  totalincome9000 = TRUE,
+  salaryincome1000 = TRUE,
+  taxableincome9100 = TRUE,
+  propertyincome2000 = FALSE,
+  businessincome3000 = FALSE,
+  capitalassetincome4000 = FALSE,
+  othersourceincome5000 = FALSE,
+  foreignincome6000 = FALSE,
+  agricultureincome6100 = FALSE,
   exemptincome = FALSE,
   turnover = FALSE,
-  costofsales = FALSE,
-  grossprofitloss = TRUE,
-  receipts64 = FALSE,
-  fixfinaltax64 = FALSE,
-  fixfinaltaxdeducted = FALSE,
+  costofsales3030 = FALSE,
+  grossprofitloss3100 = TRUE,
   accountingprofitloss3200 = FALSE,
-  nettaxchargeable = TRUE,
+  nettaxchargeable9200 = TRUE,
   minimumtax = TRUE,
-  normalincometax = TRUE,
-  withholdingtax = FALSE,
-  fixfinaltax92 = FALSE,
-  advanceincometax = FALSE,
+  normalincometax920000 = TRUE,
+  withholdingincometax9201 = FALSE,
+  fixfinaltax920100 = FALSE,
+  advanceincometax9202 = FALSE,
   admittedtax9203 = FALSE,
-  demandedincometax = FALSE,
-  supertax = FALSE,
-  refund = FALSE,
-  exports = FALSE,
-  exports2 = FALSE,
-  us1531acola = FALSE,
-  us1531acolb = FALSE,
-  us1531acolc = FALSE,
-  us1531acola1 = FALSE,
-  us1531acolb1 = FALSE,
-  us1531acolc1 = FALSE,
-  us1531bcola = FALSE,
-  us1531bcolb = FALSE,
-  us1531bcolc = FALSE,
-  us1531bcola1 = FALSE,
-  us1531bcolb1 = FALSE,
-  us1531bcolc640001 = FALSE,
-  us148cola = FALSE,
-  us148colb = FALSE,
-  us148colc = FALSE,
-  us148cola1 = FALSE,
-  us148colb1 = FALSE,
-  us148colc1 = FALSE,
-  taxcrdit = FALSE,
-  agriincometax = FALSE,
-  netrevenue = TRUE,
-  grossrevenue = TRUE,
-  sellingexpenses = TRUE,
-  openingstock = FALSE,
-  imprawmaterial = FALSE,
-  netpurchases = FALSE,
-  netdompurchases = FALSE,
+  demandedincometax9204 = FALSE,
+  supertax923181 = FALSE,
+  refund9210 = FALSE,
+  exports640000 = FALSE,
+  exports640001 = FALSE,
+  us1531acola640000 = FALSE,
+  us1531acolb640000 = FALSE,
+  us1531acolc640000 = FALSE,
+  us1531acola640001 = FALSE,
+  us1531acolb640001 = FALSE,
+  us1531acolc640001 = FALSE,
+  us1531bcola640000 = FALSE,
+  us1531bcolb640000 = FALSE,
+  us1531bcolc640000 = FALSE,
+  us1531bcola640001 = FALSE,
+  us1531bcolb640001 = FALSE,
+  us148cola640000 = FALSE,
+  us148colb640000 = FALSE,
+  us148colc640000 = FALSE,
+  us148cola640001 = FALSE,
+  us148colb640001 = FALSE,
+  us148colc640001 = FALSE,
+  taxcredit9329 = FALSE,
+  agricultureincometax9291 = FALSE,
+  netrevenue3029 = TRUE,
+  grossrevenue3009 = TRUE,
+  sellingexpenses3019 = TRUE,
+  openingstock3039 = FALSE,
+  importedrawmaterial3036 = FALSE,
+  netpurchasesexcludingtax3059 = FALSE,
+  netdomesticpurchases3055 = FALSE,
   netimportrawmaterial3056 = FALSE,
-  consumed = FALSE,
-  domrawmaterial = FALSE,
-  imprawmaterial2 = FALSE,
-  directexpenses = FALSE,
+  consumed3069 = FALSE,
+  domesticrawmaterial3065 = FALSE,
+  importrawmaterial3066 = FALSE,
+  directexpenses3089 = FALSE,
   salaries3071 = FALSE,
-  closingstock = FALSE,
-  masfees = FALSE,
+  closingstock3099 = FALSE,
+  managementadministrativesellingf = FALSE,
   salaries3154 = FALSE,
-  inclossfrbus = FALSE,
-  unadjfrpryear = FALSE,
-  unadjfrpryear2 = FALSE,
-  unadjfrpryear3 = FALSE,
-  unadjfrpryear4 = FALSE,
-  unadjfrpryear5 = FALSE,
-  unadjfrpryear6 = FALSE,
-  totalassets = TRUE,
-  building = FALSE,
-  plantmachinery = FALSE,
-  capitalworkinprogress = FALSE,
-  cashcasheq = FALSE,
-  liabilities = TRUE,
+  incomelossfrombusiness3270 = FALSE,
+  unadjustedlossesfrompreviousyear = FALSE,
+  totalassets3349 = TRUE,
+  building3302 = FALSE,
+  plantmachinery3303 = FALSE,
+  capitalworkinprogress3308 = FALSE,
+  cashcashequivalents3319 = FALSE,
+  liabilities3399 = TRUE,
   authorizedcapital3351 = FALSE,
-  paidupcapital = FALSE,
-  acprofittaxchar = FALSE,
-  tottaxded6408 = FALSE,
-  tottaxded6410 = FALSE,
-  resident = FALSE,
-  docdate = FALSE,
-  sr = FALSE,
-  days_late = TRUE,
-  audited = TRUE
+  paidupcapital3352 = FALSE,
+  accountingprofittaxchargeable923 = FALSE,
+  totaltaxdeductedundersection6408 = FALSE,
+  totaltaxdeductedundersection6410 = FALSE,
+  audited = TRUE,
+  audit_income = TRUE,
+  audit_tax = TRUE,
+  days_late = TRUE
 )
+
 
 # Generate the list of column names to include
 X_covariates <- generate_column_names(tax_returns_df_17, prefix_selection)
@@ -236,7 +238,7 @@ W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current)) #is the f
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
-train_2017_model <- FALSE # 2017 data is from 2016 tax returns
+train_2017_model <- TRUE # 2017 data is from 2016 tax returns
 
 if (train_2017_model) {
   
@@ -276,7 +278,7 @@ W_vector_train <- as.vector(tax_returns_df_17$audited_current)
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
-train_2017_test_models <- FALSE # 2017 data is from 2016 tax returns
+train_2017_test_models <- TRUE # 2017 data is from 2016 tax returns
 
 n <- nrow(X_matrix_train)
 train <- sample(1:n, n * 0.7) # training on 70% of the data
