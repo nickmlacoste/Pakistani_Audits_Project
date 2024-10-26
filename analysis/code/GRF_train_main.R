@@ -7,7 +7,16 @@ algorithms we may use for that) for the Pakistani Audits paper.
 
 rm(list = ls())
 
-library(tidyverse)
+#library(tidyverse)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(lubridate)
+library(purrr)
+library(readr)
+library(stringr)
+library(tibble)
+library(tidyr)
 library(haven)
 library(grf)
 library(knitr)

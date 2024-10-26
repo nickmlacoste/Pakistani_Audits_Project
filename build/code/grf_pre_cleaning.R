@@ -6,7 +6,16 @@ This script performs final data cleaning before ML exercises can be performed.
 
 rm(list = ls())
 
-library(tidyverse)
+#library(tidyverse)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(lubridate)
+library(purrr)
+library(readr)
+library(stringr)
+library(tibble)
+library(tidyr)
 library(haven)
 
 data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"

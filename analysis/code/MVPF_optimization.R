@@ -13,7 +13,16 @@ We use a form of mini-batch stochastic gradient descent for problems 1 and 2. Fo
 
 rm(list = ls())
 
-library(tidyverse)
+#library(tidyverse)
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(lubridate)
+library(purrr)
+library(readr)
+library(stringr)
+library(tibble)
+library(tidyr)
 library(GA)
 library(plotrix)
 
