@@ -35,6 +35,24 @@ tax_returns_df <- read.csv(file.path(data_path, "tax_returns_post_opt.csv"))
 tax_returns_df$audited_current <- sample(c(0, 1), size = nrow(tax_returns_df), 
                                          replace = TRUE, prob = c(0.9, 0.1))
 
+# Convert 2016 Pakistani Rupee columns to 2024 USD -------------------------
+
+exchange_rate_2016 <- 103.78   # PKR/USD for 2016
+inflation_adjust <- 1.31  # Current PKR/USD rate
+conversion_factor <- exchange_rate_2016 * inflation_adjust # conversion factor
+
+# Define the list of columns to exclude from conversion
+exclude_columns <- c("W_opt_1a_0", "W_opt_1a_02", "W_opt_1a_05", "W_opt_1b_0", "W_opt_1b_02",
+                     "W_opt_1b_05", "W_opt_2a_0", "W_opt_2a_02", "W_opt_2b_0",
+                     "W_opt_2b_02", "audited_current", "indiv_MVPF")  
+
+# convert all columns other than those in exclude_columns to 2024 USD
+tax_returns_df <- tax_returns_df %>%
+  mutate(across(
+    .cols = !all_of(exclude_columns),  # Select all columns except those in the exclusion list
+    .fns = ~ . / conversion_factor     # Apply the conversion factor
+  ))
+
 
 # Create table calculating MVPF, Revenue, and Cost comparisons across policies -------------------
 
