@@ -137,41 +137,6 @@ for (year in years) {
 #View(tax_returns_df %>% select(starts_with("nettaxchargeable9200_"), starts_with("NPV_taxrevenue_")))
 
 
-# Calculate taxpayer burden (UPDATE THIS WHEN YOU GET BURDEN SURVEY DATA) -------------------------
-
-# Function to calculate burden for a given year
-calculate_burden <- function(df, year) {
-  audited_column <- paste0("audited_", year)
-  income_column <- paste0("taxableincome9100_", year)
-  burden_column <- paste0("burden_", year)
-  
-  # Calculate average taxable income for the year
-  avg_income <- mean(df[[income_column]], na.rm = TRUE)
-  
-  # Rank the taxable income for the year
-  df <- df %>%
-    mutate(rank = rank(df[[income_column]], ties.method = "average"))
-  
-  # Burden increases linearly from 100 to 6000 based on income, 3000 correspods to average income
-  # Burden = 0 if not audited, if taxable income is missing and audit = 1 then they get 3000 as burden
-  df[[burden_column]] <- ifelse(df[[audited_column]] == 0, 0,
-                                ifelse(is.na(df[[income_column]]), 3000,
-                                       ifelse(df[[income_column]] == avg_income, 3000,
-                                              100 + (df$rank - 1) / (nrow(df) - 1) * (6000 - 100))))
-  
-  # Remove the temporary rank column
-  df <- df %>% select(-rank)
-  
-  return(df)
-}
-
-# Apply the function to each year and create new columns
-years <- 2014:2021
-for (year in years) {
-  tax_returns_df <- calculate_burden(tax_returns_df, year)
-}
-
-
 # Generate audit costs (TEMPORARY UNTIL WE MERGE IN ACTUAL COST DATA) -------------------------
 
 # Function to calculate audit cost for a given year
@@ -184,10 +149,9 @@ calculate_audit_cost <- function(df, year) {
   df <- df %>%
     mutate(rank = rank(df[[income_column]], ties.method = "average"))
   
-  # I have audit costs increasing linearly from 100 to 10,000 based on the person's income
-  # Audit cost is of course = 0 if they are not audited
+  # Set audit costs to range from 1,000,000 to 10,000,000 based on income
   df[[audit_cost_column]] <- ifelse(df[[audited_column]] == 0, 0,
-                                    100 + (df$rank - 1) / (nrow(df) - 1) * (10000 - 100))
+                                    1000000 + (df$rank - 1) / (nrow(df) - 1) * (10000000 - 1000000))
   
   # Remove the temporary rank column
   df <- df %>% select(-rank)
@@ -201,9 +165,61 @@ for (year in years) {
   tax_returns_df <- calculate_audit_cost(tax_returns_df, year)
 }
 
+# Calculate taxpayer burden  -------------------------
+
+bc_summary <- data.frame(year = integer(), avg_cost = numeric(), bc_ratio = numeric())
+
+# Function to calculate burden for a given year
+calculate_burden <- function(df, year) {
+  audited_column <- paste0("audited_", year)
+  income_column <- paste0("taxableincome9100_", year)
+  burden_column <- paste0("burden_", year)
+  audit_cost_column <- paste0("audit_cost_", year)
+  
+  # Define target average burden
+  target_burden_at_mean <- 520085
+  
+  # Calculate average cost for audited individuals
+  avg_cost <- mean(df[[audit_cost_column]][df[[audited_column]] == 1], na.rm = TRUE)
+  
+  # Calculate the B/C ratio
+  bc_ratio <- target_burden_at_mean / avg_cost
+  
+  # Record the average cost and B/C ratio for the year
+  bc_summary <<- rbind(bc_summary, data.frame(year = year, avg_cost = avg_cost, bc_ratio = bc_ratio))
+  
+  # Calculate average taxable income for the year
+  avg_income <- mean(df[[income_column]], na.rm = TRUE)
+  
+  # Define slope for income adjustment
+  slope <- 0.18
+  
+  # Calculate burden for each individual
+  df[[burden_column]] <- ifelse(df[[audited_column]] == 0, 0,
+                                ifelse(is.na(df[[income_column]]), target_burden_at_mean,
+                                       # Initial burden based on B/C ratio and audit cost
+                                       (df[[audit_cost_column]] * bc_ratio) +
+                                         # Income adjustment based on log difference from avg income
+                                         slope * (log(df[[income_column]]) - log(avg_income))))
+  
+  return(df)
+}
+
+# Apply the function to each year and create new columns
+years <- 2014:2021
+for (year in years) {
+  tax_returns_df <- calculate_burden(tax_returns_df, year)
+}
+
+# View and save the B/C summary table
+write.csv(bc_summary, file.path(output_path, "bc_summary.csv"), 
+          row.names = FALSE)
+
+
 # Write ML-ready data to the data path -----------------------------
 
-write.csv(tax_returns_df, file.path(output_path, "tax_returns_data_ML_cleaned.csv"), row.names = FALSE)
+write.csv(tax_returns_df, file.path(output_path, "tax_returns_data_ML_cleaned.csv"), 
+          row.names = FALSE)
 
 
 
