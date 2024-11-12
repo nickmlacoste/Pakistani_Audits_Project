@@ -29,6 +29,9 @@ cf_output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulan
 # Import 2013-2021 tax returns 
 tax_returns_df <- read.csv(file.path(data_path, "tax_returns_data_ML_cleaned.csv"))
 
+# Last-minute cleaning ------------------------------
+
+
 # Split data by year (for training and out-of-bag predicting)
 # Train on 2017 (randomized), test on 2018 (can observe 4-year NPVs in that year only)
 # NOTE: the predictive model can be extrapolated to any future year, but we can only observe true NPVs
@@ -133,38 +136,38 @@ generate_column_names <- function(df, prefix_selection) {
 # List of prefixes: select TRUE if you wish to include, FALSE if not
 # note this will include all instances of *_b3, *_b2, *_b1, *_current in the X matrix
 prefix_selection <- list(
-  residentstatus = FALSE,
+  residentstatus = TRUE,
   sentdate = FALSE,
   documentdate = FALSE,
   duedate = FALSE,
-  medium = FALSE,
-  receiptvalues640001 = FALSE,
-  fixfinaltax640001 = FALSE,
-  fixfinaltaxdeducted640001 = FALSE,
+  medium = TRUE,
+  receiptvalues640001 = TRUE,
+  fixfinaltax640001 = TRUE,
+  fixfinaltaxdeducted640001 = TRUE,
   totalincome9000 = TRUE,
   salaryincome1000 = TRUE,
   taxableincome9100 = TRUE,
-  propertyincome2000 = FALSE,
-  businessincome3000 = FALSE,
-  capitalassetincome4000 = FALSE,
-  othersourceincome5000 = FALSE,
-  foreignincome6000 = FALSE,
-  agricultureincome6100 = FALSE,
-  exemptincome = FALSE,
-  turnover = FALSE,
-  costofsales3030 = FALSE,
+  propertyincome2000 = TRUE,
+  businessincome3000 = TRUE,
+  capitalassetincome4000 = TRUE,
+  othersourceincome5000 = TRUE,
+  foreignincome6000 = TRUE,
+  agricultureincome6100 = TRUE,
+  exemptincome = TRUE,
+  turnover = TRUE,
+  costofsales3030 = TRUE,
   grossprofitloss3100 = TRUE,
-  accountingprofitloss3200 = FALSE,
+  accountingprofitloss3200 = TRUE,
   nettaxchargeable9200 = TRUE,
   minimumtax = TRUE,
   normalincometax920000 = TRUE,
-  withholdingincometax9201 = FALSE,
-  fixfinaltax920100 = FALSE,
-  advanceincometax9202 = FALSE,
-  admittedtax9203 = FALSE,
-  demandedincometax9204 = FALSE,
-  supertax923181 = FALSE,
-  refund9210 = FALSE,
+  withholdingincometax9201 = TRUE,
+  fixfinaltax920100 = TRUE,
+  advanceincometax9202 = TRUE,
+  admittedtax9203 = TRUE,
+  demandedincometax9204 = TRUE,
+  supertax923181 = TRUE,
+  refund9210 = TRUE,
   exports640000 = FALSE,
   exports640001 = FALSE,
   us1531acola640000 = FALSE,
@@ -184,37 +187,37 @@ prefix_selection <- list(
   us148cola640001 = FALSE,
   us148colb640001 = FALSE,
   us148colc640001 = FALSE,
-  taxcredit9329 = FALSE,
-  agricultureincometax9291 = FALSE,
+  taxcredit9329 = TRUE,
+  agricultureincometax9291 = TRUE,
   netrevenue3029 = TRUE,
   grossrevenue3009 = TRUE,
   sellingexpenses3019 = TRUE,
-  openingstock3039 = FALSE,
-  importedrawmaterial3036 = FALSE,
-  netpurchasesexcludingtax3059 = FALSE,
-  netdomesticpurchases3055 = FALSE,
-  netimportrawmaterial3056 = FALSE,
-  consumed3069 = FALSE,
-  domesticrawmaterial3065 = FALSE,
-  importrawmaterial3066 = FALSE,
-  directexpenses3089 = FALSE,
-  salaries3071 = FALSE,
-  closingstock3099 = FALSE,
-  managementadministrativesellingf = FALSE,
-  salaries3154 = FALSE,
-  incomelossfrombusiness3270 = FALSE,
-  unadjustedlossesfrompreviousyear = FALSE,
+  openingstock3039 = TRUE,
+  importedrawmaterial3036 = TRUE,
+  netpurchasesexcludingtax3059 = TRUE,
+  netdomesticpurchases3055 = TRUE,
+  netimportrawmaterial3056 = TRUE,
+  consumed3069 = TRUE,
+  domesticrawmaterial3065 = TRUE,
+  importrawmaterial3066 = TRUE,
+  directexpenses3089 = TRUE,
+  salaries3071 = TRUE,
+  closingstock3099 = TRUE,
+  managementadministrativesellingf = TRUE,
+  salaries3154 = TRUE,
+  incomelossfrombusiness3270 = TRUE,
+  unadjustedlossesfrompreviousyear = TRUE,
   totalassets3349 = TRUE,
-  building3302 = FALSE,
-  plantmachinery3303 = FALSE,
-  capitalworkinprogress3308 = FALSE,
-  cashcashequivalents3319 = FALSE,
+  building3302 = TRUE,
+  plantmachinery3303 = TRUE,
+  capitalworkinprogress3308 = TRUE,
+  cashcashequivalents3319 = TRUE,
   liabilities3399 = TRUE,
-  authorizedcapital3351 = FALSE,
-  paidupcapital3352 = FALSE,
-  accountingprofittaxchargeable923 = FALSE,
-  totaltaxdeductedundersection6408 = FALSE,
-  totaltaxdeductedundersection6410 = FALSE,
+  authorizedcapital3351 = TRUE,
+  paidupcapital3352 = TRUE,
+  accountingprofittaxchargeable923 = TRUE,
+  totaltaxdeductedundersection6408 = TRUE,
+  totaltaxdeductedundersection6410 = TRUE,
   audited = TRUE,
   audit_income = TRUE,
   audit_tax = TRUE,
@@ -245,18 +248,25 @@ Y_matrix_train <- as.matrix(tax_returns_df_17[, c("NPV_taxrevenue_current",
                                                   "burden_current")])
 W_vector_train <- factor(as.vector(tax_returns_df_17$audited_current)) #is the factor() function necessary here?
 
+# treatment is random and sparse, so we provide GRF with known propensity scores to avoid 0's
+propensity_score <- mean(tax_returns_df_17$audited_current)
+W_hat_matrix <- matrix(c(1 - propensity_score, propensity_score), 
+                       nrow = nrow(tax_returns_df_17), 
+                       ncol = 2, byrow = TRUE)
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
 train_2017_model <- TRUE # 2017 data is from 2016 tax returns
 
 if (train_2017_model) {
   
+  cat("Training Primary Causal Forest \n")
+  
   # Estimate the causal forest model
   cf_model_full_17 <- multi_arm_causal_forest(X = X_matrix_train,
                                               Y = Y_matrix_train,
                                               W = W_vector_train,
                                               Y.hat = NULL,
-                                              W.hat = NULL,
+                                              W.hat = W_hat_matrix,
                                               num.trees = 1000,
                                               honesty = TRUE,
                                               honesty.fraction = 0.5,
@@ -271,10 +281,14 @@ if (train_2017_model) {
   # Save the causal forest model
   saveRDS(cf_model_full_17, file = paste0(cf_output_path, "/cf_model_full_trained_2017.rda"))
   
+  cat("Primary Causal Forest Trained and Saved \n")
+  
 } else {
   
   # Load the previously saved model
   cf_model_full_17 <- readRDS(file.path(cf_output_path, "cf_model_full_trained_2017.rda"))
+  
+  cat("Prior-Trained Primary Causal Forest Imported \n")
 }
 
 # Estimate evaluation forests for prediction quality tests -----------------------------
@@ -284,6 +298,9 @@ X_matrix_train <- as.matrix(tax_returns_df_17[, X_covariates])
 # only using revenue for RATE because multi-outcomes don't work
 Y_matrix_train <- as.vector(tax_returns_df_17$NPV_taxrevenue_current)
 W_vector_train <- as.vector(tax_returns_df_17$audited_current)
+
+propensity_score <- mean(tax_returns_df_17$audited_current)
+W_hat_vector <- rep(propensity_score, nrow(tax_returns_df_17))
 
 
 # Toggle to TRUE if you want to re-train the causal forest, if FALSE it will load the saved model
@@ -295,12 +312,14 @@ test <- setdiff(1:n, train) # evaluate on remaining 30%
 
 if (train_2017_test_models) {
   
+  cat("Training Causal Forests for Prediction Quality Tests \n")
+  
   # Estimate the causal forest test and evaluation models
   cf_model_test <- causal_forest(X = X_matrix_train[train, ],
                                  Y = Y_matrix_train[train],
                                  W = W_vector_train[train],
                                  Y.hat = NULL,
-                                 W.hat = NULL,
+                                 W.hat = W_hat_vector[train],
                                  num.trees = 1000,
                                  honesty = TRUE,
                                  honesty.fraction = 0.5,
@@ -311,11 +330,13 @@ if (train_2017_test_models) {
                                  min.node.size = 5
                                  )
   
+  cat("Test Forest Trained \n")
+  
   cf_model_eval <- causal_forest(X = X_matrix_train[test, ],
                                  Y = Y_matrix_train[test],
                                  W = W_vector_train[test],
                                  Y.hat = NULL,
-                                 W.hat = NULL,
+                                 W.hat = W_hat_vector[test],
                                  num.trees = 1000,
                                  honesty = TRUE,
                                  honesty.fraction = 0.5,
@@ -325,17 +346,23 @@ if (train_2017_test_models) {
                                  stabilize.splits = TRUE,
                                  min.node.size = 5
                                  )
+  
+  cat("Evaluation Forest Trained \n")
   
   
   # Save the causal forest models
   saveRDS(cf_model_test, file = paste0(cf_output_path, "/cf_model_test.rda"))
   saveRDS(cf_model_eval, file = paste0(cf_output_path, "/cf_model_evaluation.rda"))
   
+  cat("Secondary Forests Saved \n")
+  
 } else {
   
   # Load the previously saved models
   cf_model_test <- readRDS(file.path(cf_output_path, "cf_model_test.rda"))
   cf_model_eval <- readRDS(file.path(cf_output_path, "cf_model_evaluation.rda"))
+  
+  cat("Prior-Trained Prediction Quality Causal Forests Imported \n")
 }
 
 
@@ -569,7 +596,7 @@ dev.off()
 
 write.csv(tax_returns_df_18, file.path(data_path, "tax_returns_post_ML.csv"), row.names = FALSE)
 
-
+cat("All Forests Trained/Saved and Predictions are Saved \n")
 
 
 

@@ -2,40 +2,31 @@
 
 "
 This script performs final data cleaning before ML exercises can be performed.
+
+#NOTE:: tax_returns_df IS NOW CALLED FROM Audits_Master.R IN A LOOP FOR CHUNK PROCESSING
 "
 
-rm(list = ls())
+# library(dplyr)
+# library(forcats)
+# library(ggplot2)
+# library(lubridate)
+# library(purrr)
+# library(readr)
+# library(stringr)
+# library(tibble)
+# library(tidyr)
+# library(arrow)
 
-#library(tidyverse)
-library(dplyr)
-library(forcats)
-library(ggplot2)
-library(lubridate)
-library(purrr)
-library(readr)
-library(stringr)
-library(tibble)
-library(tidyr)
-library(haven)
-library(readxl)
+# data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data/Raw_Batched"
+# output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
 
-data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
-output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
+# Import raw tax return data ------------------
 
-# Import raw tax return data 
+#tax_returns_df <- read_dta(file.path(output_path, "tax_returns_test_data.dta"))
+#tax_returns_df <- read_dta(file.path(data_path, "full_tax_return_withAudits.dta"))
 
-# # For now I'm cutting each dataset to their first 100 rows. This is for ease of code testing
-# tax_returns_df <- bind_rows(
-#   read_dta(file.path(data_path, "Individual_ITReturns_2013_2014_cleaned.dta")) %>% slice(1:100),
-#   read_dta(file.path(data_path, "Individual_ITReturns_2015_2016_cleaned.dta")) %>% slice(1:100),
-#   read_dta(file.path(data_path, "Individual_ITReturns_2017_2018_cleaned.dta")) %>% slice(1:100),
-#   read_dta(file.path(data_path, "Individual_ITReturns_2019_2020_cleaned.dta")) %>% slice(1:100)
-# )
+#NOTE:: tax_returns_df IS NOW CALLED FROM Audits_Master.R IN A LOOP FOR CHUNK PROCESSING
 
-# write.csv(tax_returns_df, file.path(data_path, "tax_returns_test_data.csv"), row.names = FALSE)
-
-#tax_returns_df <- read.csv(file.path(output_path, "tax_returns_test_data.csv"))
-tax_returns_df <- read_dta(file.path(output_path, "tax_returns_test_data.dta"))
 
 # Creating derived columns that need to be created before pivoting -------------------------
 
@@ -67,10 +58,10 @@ tax_returns_df <- tax_returns_df %>%
     audit_tax = if_else(audited == 0, 0, if_else(is.na(audit_tax), 0, audit_tax))
   ) %>%
   rename(year = ty) %>%
-  select(-c(taxpayertype, subject, `_merge`)) # enter any unused columns
+  select(-c(taxpayertype, subject)) # enter any unused columns
 
-#view any derived columns
-tax_returns_df %>% pull(days_late)
+## view any derived columns
+#tax_returns_df %>% pull(days_late)
 
 
 
@@ -137,25 +128,25 @@ for (year in years) {
 
 # Generate audit costs -------------------------------------
 
-costs_df <- read_dta(file.path(output_path, "cost_data.dta"))
+costs_df <- read_dta(file.path(data_path, "cost_data.dta"))
 
 # convert negative values to positive (this was a data mistake -- they are not negative)
 costs_df <- costs_df %>%
   mutate(across(where(is.numeric), abs))
 
-# for now, we consider only the total per-office yearly expenses:
-costs_df <- costs_df %>%
-  select(tx_office, ty, TotalRegionalTaxOfficeIsl) %>%
-  rename(Total_Costs = TotalRegionalTaxOfficeIsl) %>%
-  mutate(tx_office = str_to_upper(tx_office))
+# # this code is for cleaning the costs_df data from excel 
+# costs_df <- costs_df %>%
+#   select(tx_office, ty, TotalRegionalTaxOfficeIsl) %>%
+#   rename(Total_Costs = TotalRegionalTaxOfficeIsl) %>%
+#   mutate(tx_office = str_to_upper(tx_office))
 
 # match taxpayers with their field office:
-sheet_names <- excel_sheets(file.path(output_path, "Individuals_27082024.xlsx"))
+sheet_names <- excel_sheets(file.path(data_path, "Individuals_27082024.xlsx"))
 
 # Loop through each sheet in the excel file
 for (sheet in sheet_names) {
   # Read the sheet with headers, drop the first column
-  temp_df <- read_excel(file.path(output_path, "Individuals_27082024.xlsx"),
+  temp_df <- read_excel(file.path(data_path, "Individuals_27082024.xlsx"),
                         sheet = sheet)
   
   # Clean up by removing SR and REGISTERED ON columns, and renaming variables
@@ -165,6 +156,7 @@ for (sheet in sheet_names) {
   
   # Merge with the larger dataframe (left join to preserve all rows in tax_returns_df)
   tax_returns_df <- tax_returns_df %>%
+    mutate(tid = as.character(tid)) %>%
     left_join(temp_df %>% select(tid, tx_office), by = "tid")
 }
 
@@ -250,15 +242,6 @@ calculate_burden <- function(df, year) {
   # Define target average burden
   target_burden_at_mean <- 520085
   
-  # Calculate average cost for audited individuals
-  avg_cost <- mean(df[[audit_cost_column]][df[[audited_column]] == 1], na.rm = TRUE)
-  
-  # Calculate the B/C ratio
-  bc_ratio <- target_burden_at_mean / avg_cost
-  
-  # Record the average cost and B/C ratio for the year
-  bc_summary <<- rbind(bc_summary, data.frame(year = year, avg_cost = avg_cost, bc_ratio = bc_ratio))
-  
   # Calculate average taxable income for the year
   avg_income <- mean(df[[income_column]], na.rm = TRUE)
   
@@ -269,28 +252,26 @@ calculate_burden <- function(df, year) {
   df[[burden_column]] <- ifelse(df[[audited_column]] == 0, 0,
                                 ifelse(is.na(df[[income_column]]), target_burden_at_mean,
                                        # Initial burden based on B/C ratio and audit cost
-                                       (df[[audit_cost_column]] * bc_ratio) +
+                                       (df[[audit_cost_column]] * (target_burden_at_mean / mean(df[[audit_cost_column]][df[[audited_column]] == 1], na.rm = TRUE))) +
                                          # Income adjustment based on log difference from avg income
                                          slope * (log(df[[income_column]]) - log(avg_income))))
   
   return(df)
 }
 
-# Apply the function to each year and create new columns
+# Apply the burden calculation function to each year
 years <- 2014:2021
 for (year in years) {
   tax_returns_df <- calculate_burden(tax_returns_df, year)
 }
 
-# View and save the B/C summary table
-write.csv(bc_summary, file.path(output_path, "bc_summary.csv"), 
-          row.names = FALSE)
-
 
 # Write ML-ready data to the data path -----------------------------
+# THIS IS NOW HANDLED IN THE Audits_Cleaning_Master.R SCRIPT
 
-write.csv(tax_returns_df, file.path(output_path, "tax_returns_data_ML_cleaned.csv"), 
-          row.names = FALSE)
+
+# write.csv(tax_returns_df, file.path(output_path, "tax_returns_data_ML_cleaned.csv"), 
+#           row.names = FALSE)
 
 
 

@@ -36,26 +36,29 @@ df <- df %>%
   rename(
     R = NPV_revenue_cate,
     B = burden_cate,
-    C = audit_cost_cate
+    C = audit_cost_cate,
+    #income is missing for many who have income taxes. So for scaling purposes I treat 2017 
+    #income tax burden as their income 
+    income = nettaxchargeable9200_b1 
   )
 
 ##### placeholder data generation function - remove once you have real CATE estimates ####
 
-generate_dataset <- function(n) {
-  set.seed(42)  # For reproducibility
-  R <- runif(n, min = 5, max = 20)  # Revenue (R_i)
-  C <- runif(n, min = 1, max = 10)  # Cost (C_i)
-  B <- runif(n, min = 1, max = 10)  # Burden (B_i)
-  income <- runif(n, min = 1, max = 500000)
-  
-  # Calculate individual MVPF
-  indiv_MVPF <- (R + B) / (R - C)
-  
-  # Return the dataset as a data frame
-  return(data.frame(R, B, C, income, indiv_MVPF))
-}
-
-df <- generate_dataset(n=1000)
+# generate_dataset <- function(n) {
+#   set.seed(42)  # For reproducibility
+#   R <- runif(n, min = 5, max = 20)  # Revenue (R_i)
+#   C <- runif(n, min = 1, max = 10)  # Cost (C_i)
+#   B <- runif(n, min = 1, max = 10)  # Burden (B_i)
+#   income <- runif(n, min = 1, max = 500000)
+#   
+#   # Calculate individual MVPF
+#   indiv_MVPF <- (R + B) / (R - C)
+#   
+#   # Return the dataset as a data frame
+#   return(data.frame(R, B, C, income, indiv_MVPF))
+# }
+# 
+# df <- generate_dataset(n=1000)
 ####################################################################################
 
 
@@ -73,7 +76,7 @@ scale_R_B <- function(R, B, income, alpha, mean_income) {
 }
 
 # Calculate the mean income
-mean_income <- mean(df$income)
+mean_income <- mean(df$income, na.rm = TRUE)
 
 # Define the objective function
 objective_function <- function(R, B, C, treatment) {
@@ -234,9 +237,12 @@ optimize_for_alpha <- function(df, alpha_values, bar_R, bar_C, batch_size, max_i
 
 # Policy 1a: MVPF minimization, minimum revenue constraint ---------------------
 
+observed_R_2018 <- sum(df$audited_current*df$NPV_taxrevenue_current)
+observed_C_2018 <- sum(df$audited_current*df$audit_cost_current)
+
 alpha_values <- c(0, 0.2, 0.5)
 df <- optimize_for_alpha(df, alpha_values, 
-                         bar_R = 5000, bar_C = NULL, 
+                         bar_R = observed_R_2018, bar_C = NULL, 
                          batch_size = 64, max_iter = 2000, 
                          cost_constraint = FALSE)
 
@@ -244,9 +250,12 @@ write.csv(df, file.path(data_path, "tax_returns_post_opt.csv"), row.names = FALS
 
 # Policy 1b: MVPF minimization, minimum revenue and maximum cost constraint ----------------
 
+observed_R_2018 <- sum(df$audited_current*df$NPV_taxrevenue_current)
+observed_C_2018 <- sum(df$audited_current*df$audit_cost_current)
+
 alpha_values <- c(0, 0.2, 0.5)
 df <- optimize_for_alpha(df, alpha_values, 
-                         bar_R = 5000, bar_C = 1000, 
+                         bar_R = observed_R_2018, bar_C = observed_C_2018, 
                          batch_size = 64, max_iter = 2000, 
                          cost_constraint = TRUE)
 
@@ -347,9 +356,13 @@ initialize_population_valid_fast <- function(object, R, B, C, MVPF_max, Cost_max
 
 # Policy 2a: Revenue max, MVPF constraint, no cost constraint ------------------
 
-# Maximum allowable cost and MVPF
-MVPF_max <- 1.5
-Cost_max <- NULL
+# Maximum allowable cost and MVPF are the observed 2018 values
+observed_R_2018 <- sum(df$audited_current*df$NPV_taxrevenue_current)
+observed_C_2018 <- sum(df$audited_current*df$audit_cost_current)
+observed_B_2018 <- sum(df$audited_current*df$burden_current)
+
+MVPF_max <- (observed_R_2018 + observed_B_2018)/(observed_R_2018 - observed_C_2018)
+Cost_max <- observed_C_2018
 
 # Set to TRUE to enforce the cost constraint, FALSE to ignore it
 cost_constraint <- FALSE  
