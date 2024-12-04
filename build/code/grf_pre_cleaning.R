@@ -6,23 +6,29 @@ This script performs final data cleaning before ML exercises can be performed.
 #NOTE:: tax_returns_df IS NOW CALLED FROM Audits_Master.R IN A LOOP FOR CHUNK PROCESSING
 "
 
-# library(dplyr)
-# library(forcats)
-# library(ggplot2)
-# library(lubridate)
-# library(purrr)
-# library(readr)
-# library(stringr)
-# library(tibble)
-# library(tidyr)
-# library(arrow)
+library(dplyr)
+library(readr)
+library(stringr)
+library(arrow)
+library(furrr)  
+library(future) 
+library(forcats)
+library(ggplot2)
+library(lubridate)
+library(purrr)
+library(tibble)
+library(tidyr)
+library(haven)
+library(readxl)
+library(data.table)
 
-# data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data/Raw_Batched"
-# output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
+data_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data/Raw_Batched"
+output_path <- "C:/Users/nickm/OneDrive/Acer (new laptop)/Documents/PhD/Tulane University/Projects/Pakistan Audits/Data"
 
 # Import raw tax return data ------------------
 
-#tax_returns_df <- read_dta(file.path(output_path, "tax_returns_test_data.dta"))
+tax_returns_df <- read_dta(file.path(output_path, "tax_returns_test_data.dta"))
+tax_returns_df <- data.table(tax_returns_df)
 #tax_returns_df <- read_dta(file.path(data_path, "full_tax_return_withAudits.dta"))
 
 #NOTE:: tax_returns_df IS NOW CALLED FROM Audits_Master.R IN A LOOP FOR CHUNK PROCESSING
@@ -30,17 +36,18 @@ This script performs final data cleaning before ML exercises can be performed.
 
 # Creating derived columns that need to be created before pivoting -------------------------
 
-# Convert all columns that look like numbers to numeric
-non_convert_cols <- c("tid", "audit_income", "audit_tax", "audited", "duedate",
-                      "sentdate", "documentdate", "taxpayertype", "residentstatus",
-                      "ty", "subject", "medium")
-tax_returns_df <- suppressWarnings(
-  tax_returns_df %>%
-  mutate(across(
-    .cols = -any_of(non_convert_cols),  # Apply to all columns except the excluded ones
-    .fns = ~ as.numeric(gsub(",", "", gsub("^\\s+", "", .)))  # Remove spaces and commas, then convert to numeric
-  ))
-)
+# # Convert all columns that look like numbers to numeric
+# # THIS IS NOW ALSO HANDLED IN Audits_Cleaning_Master_parallel.R
+# non_convert_cols <- c("tid", "audit_income", "audit_tax", "audited", "duedate",
+#                       "sentdate", "documentdate", "taxpayertype", "residentstatus",
+#                       "ty", "subject", "medium")
+# tax_returns_df <- suppressWarnings(
+#   tax_returns_df %>%
+#   mutate(across(
+#     .cols = -any_of(non_convert_cols),  # Apply to all columns except the excluded ones
+#     .fns = ~ as.numeric(gsub(",", "", gsub("^\\s+", "", .)))  # Remove spaces and commas, then convert to numeric
+#   ))
+# )
 
 
 tax_returns_df <- tax_returns_df %>%
@@ -67,14 +74,21 @@ tax_returns_df <- tax_returns_df %>%
 
 # Pivot dataframe wider ------------------
 
-tax_returns_df <- tax_returns_df %>%
-  pivot_wider(
-    id_cols = tid,                      # create 1 row per taxpayer id
-    names_from = year,                   # Pivot columns based on 'year'
-    values_from = -c(tid, year),          # Pivot all columns other than ID and year
-    names_sep = "_",                     # Separator for new column names
-    names_glue = "{.value}_{year}"        # Format new column names as variable_year
-  )
+# tax_returns_df <- tax_returns_df %>%
+#   pivot_wider(
+#     id_cols = tid,                      # create 1 row per taxpayer id
+#     names_from = year,                   # Pivot columns based on 'year'
+#     values_from = -c(tid, year),          # Pivot all columns other than ID and year
+#     names_sep = "_",                     # Separator for new column names
+#     names_glue = "{.value}_{year}"        # Format new column names as variable_year
+#   )
+
+tax_returns_df <- dcast(
+  tax_returns_df,
+  tid ~ year,                     # Reshape to have one row per 'tid' and columns for each 'year'
+  value.var = setdiff(names(tax_returns_df), c("tid", "year")), # Columns other than tid and year
+  sep = "_"
+)
 
 # drop rows where nettaxchargeable_year is missing for any of 2017-2021: 
 # this indicates the taxpayer didn't file a return in that year. Missing values are predictors
@@ -135,10 +149,10 @@ costs_df <- costs_df %>%
   mutate(across(where(is.numeric), abs))
 
 # # this code is for cleaning the costs_df data from excel 
-# costs_df <- costs_df %>%
-#   select(tx_office, ty, TotalRegionalTaxOfficeIsl) %>%
-#   rename(Total_Costs = TotalRegionalTaxOfficeIsl) %>%
-#   mutate(tx_office = str_to_upper(tx_office))
+costs_df <- costs_df %>%
+  select(tx_office, ty, TotalRegionalTaxOfficeIsl) %>%
+  rename(Total_Costs = TotalRegionalTaxOfficeIsl) %>%
+  mutate(tx_office = str_to_upper(tx_office))
 
 # match taxpayers with their field office:
 sheet_names <- excel_sheets(file.path(data_path, "Individuals_27082024.xlsx"))
